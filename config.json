@@ -1,7 +1,7 @@
 {
   "student_name": "Philip M.",
   "camera_url": "",
-  "allow_speakers": false,
+  "allow_speakers": true,
   "adhd_away_seconds": 6,
   "open_dashboard": true,
   "accommodations": [
@@ -142,5 +142,6 @@
         "Seat near the door"
       ]
     }
-  ]
+  ],
+  "camera_window": false
 }

@@ -1245,13 +1245,56 @@ def probe_cameras():
 
 
 def open_app_window(url):
-    """Open EqualEd's web app as its own window (Chrome app mode: no tabs, no address bar)."""
+    """Bring the EqualEd window (Chrome app mode: no tabs, no address bar) to the front, or open it."""
     import subprocess
     chrome = "/Applications/Google Chrome.app"
-    if os.path.exists(chrome):
+    if not os.path.exists(chrome):
+        subprocess.Popen(["open", url]); return
+    script = (
+        'tell application "Google Chrome"\n'
+        '  repeat with w in windows\n'
+        '    if (title of w) is "EqualEd" then\n'
+        '      set index of w to 1\n      activate\n      return "found"\n'
+        '    end if\n  end repeat\nend tell\nreturn "none"')
+    try:
+        found = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        found = "none"
+    if found != "found":
         subprocess.Popen(["open", "-na", chrome, "--args", f"--app={url}", "--window-size=1440,920"])
-    else:
-        subprocess.Popen(["open", url])
+
+
+class MacApp:
+    """Makes EqualEd behave like a normal Mac app: a Dock icon, and clicking the app (Dock,
+    Launchpad, Spotlight, Finder) while it runs brings up the dashboard window."""
+
+    def __init__(self, url):
+        self.url, self.app, self.was_active, self.last_open = url, None, True, 0.0
+        try:
+            import AppKit
+            self.AppKit = AppKit
+            self.app = AppKit.NSApplication.sharedApplication()
+            self.app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+            self.app.finishLaunching()
+        except Exception as e:
+            log("Mac app integration off:", e)
+
+    def tick(self):
+        if self.app is None:
+            return
+        AK = self.AppKit
+        while True:   # handle pending Mac events (Dock clicks, quit) without blocking the camera loop
+            ev = self.app.nextEventMatchingMask_untilDate_inMode_dequeue_(
+                AK.NSEventMaskAny, AK.NSDate.dateWithTimeIntervalSinceNow_(0), AK.NSDefaultRunLoopMode, True)
+            if ev is None:
+                break
+            self.app.sendEvent_(ev)
+        active = bool(self.app.isActive())
+        if active and not self.was_active and time.time() - self.last_open > 1.5:
+            self.last_open = time.time()
+            log("EqualEd clicked: showing the dashboard")
+            open_app_window(self.url)
+        self.was_active = active
 
 
 def selftest():
@@ -1308,9 +1351,12 @@ def main():
     if cfg.get("open_dashboard", True) and demo.server.app_url.startswith("http"):
         open_app_window(demo.server.app_url)
     log("professor page:", demo.server.prof_url)
-    cv2.namedWindow(WIN, cv2.WINDOW_AUTOSIZE)
-    raise_window(WIN)
-    cv2.setMouseCallback(WIN, lambda e, x, y, fl, p: demo.on_click(x, y) if e == cv2.EVENT_LBUTTONDOWN else None)
+    show_cam = bool(cfg.get("camera_window", False))
+    if show_cam:
+        cv2.namedWindow(WIN, cv2.WINDOW_AUTOSIZE)
+        raise_window(WIN)
+        cv2.setMouseCallback(WIN, lambda e, x, y, fl, p: demo.on_click(x, y) if e == cv2.EVENT_LBUTTONDOWN else None)
+    mac = MacApp(demo.server.app_url)          # Dock icon: clicking EqualEd brings up the dashboard
     log("running. click the window, press q to quit")
     prev, writer = time.time(), None
     os.makedirs("recordings", exist_ok=True)
@@ -1344,14 +1390,16 @@ def main():
         fps = 1.0 / max(now - prev, 1e-6); prev = now
         demo.fps = 0.9 * demo.fps + 0.1 * fps
         put(canvas, f"{demo.fps:.0f} FPS", (FRAME_W - 80, 20), 0.5, (0, 255, 0), 1)
-        cv2.imshow(WIN, canvas)
+        if show_cam:
+            cv2.imshow(WIN, canvas)
+        mac.tick()
         if demo.frame_i % 2 == 0:                 # ~10 fps for the app's Live view
             ok_j, jpg = cv2.imencode(".jpg", canvas, [cv2.IMWRITE_JPEG_QUALITY, 72])
             if ok_j:
                 demo.latest_jpeg = jpg.tobytes()
         if writer is not None:
             writer.write(canvas)
-        key = cv2.waitKey(1) & 0xFF
+        key = (cv2.waitKey(1) & 0xFF) if show_cam else 255
         if key == ord("q"):
             break
         elif key in (ord("a"), ord("u")):
