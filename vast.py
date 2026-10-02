@@ -118,7 +118,7 @@ class Vast:
                     r = requests.get(self.s["COSMOS3_REASON_URL"] + "/v1/models", headers=self._h(), timeout=6)
                     self.cosmos_model = r.json()["data"][0]["id"]
                 except Exception:
-                    self.cosmos_model = "nvidia/cosmos3-reason"
+                    self.cosmos_model = "nvidia/cosmos3-nano-reasoner"
         if self.archive_on:
             try:
                 self._login(force=True)
@@ -137,7 +137,7 @@ class Vast:
             for j in (jpgs or [])[:6]:
                 content.append({"type": "image_url",
                                 "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(j).decode()}})
-        body = {"model": self.cosmos_model or "nvidia/cosmos3-reason",
+        body = {"model": self.cosmos_model or "nvidia/cosmos3-nano-reasoner",
                 "messages": [{"role": "user", "content": content}], "max_tokens": max_tokens, "temperature": 0}
         r = requests.post(self.s["COSMOS3_REASON_URL"] + "/v1/chat/completions", headers=self._h(), json=body, timeout=timeout)
         if r.status_code >= 400 and mp4_bytes is not None and self.video_mode and jpgs:
@@ -172,7 +172,7 @@ class Vast:
     def canary(self, wav_bytes):
         r = requests.post(self.s["CANARY_1B_URL"] + "/v1/audio/transcriptions", headers=self._h(),
                           files={"file": ("chunk.wav", wav_bytes, "audio/wav")},
-                          data={"model": "nvidia/canary-1b", "language": "en"}, timeout=30)
+                          data={"language": "en-US"}, timeout=30)   # Riva: language only, no model field (VM_NOTES.md)
         r.raise_for_status()
         self.status["canary"] = "connected"
         try:
