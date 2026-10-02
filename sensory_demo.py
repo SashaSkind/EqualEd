@@ -236,13 +236,22 @@ def _flips(sig, min_p2p):
     p2p = float(np.percentile(d, 90) - np.percentile(d, 10))
     if p2p < min_p2p:
         return 0, p2p
-    th, state, flips = 0.25 * p2p, 0, 0
-    for v in d:
+    th, state, flips, at = 0.25 * p2p, 0, 0, []
+    for i, v in enumerate(d):
         s = 1 if v > th else -1 if v < -th else 0
         if s and s != state:
             if state:
                 flips += 1
+                at.append(i)
             state = s
+    # Real rocking repeats: the motion lines up with itself shifted by one rock (0.4 to 3 s).
+    # Talking, gesturing and shifting in a seat don't, so they fail this check.
+    z = d - d.mean()
+    den = float(np.dot(z, z)) or 1e-9
+    lags = range(6, min(60, len(z) // 2))
+    best = max((float(np.dot(z[:-L], z[L:])) / den * len(z) / (len(z) - L) for L in lags), default=0.0)
+    if best < 0.6:
+        return 0, p2p
     return flips, p2p
 
 
@@ -250,7 +259,7 @@ def rocking_score(tr, now, window=5.0):
     """Back-and-forth swings of the head (side to side, up and down, toward/away from the
     camera) and of the shoulders. Returns (best swing count, details)."""
     head = {"x": [], "y": [], "size": []}
-    sh = {"x": [], "y": []}
+    sh = {"x": [], "y": [], "w": []}
     for t, k, c, b in tr.hist:
         if now - t > window:
             continue
@@ -259,21 +268,20 @@ def rocking_score(tr, now, window=5.0):
             head["x"].append(k[NOSE][0]); head["y"].append(k[NOSE][1]); head["size"].append(eye_d)
         if c[L_SH] > 0.5 and c[R_SH] > 0.5:
             m = (k[L_SH] + k[R_SH]) / 2
-            sh["x"].append(m[0]); sh["y"].append(m[1])
+            sh["x"].append(m[0]); sh["y"].append(m[1]); sh["w"].append(float(np.linalg.norm(k[L_SH] - k[R_SH])))
     best, info = 0, {}
     if len(head["size"]) >= 12:
         scale = float(np.median(head["size"]))
-        for name, sig, mp in (("head side-to-side", np.array(head["x"]) / scale, 0.2),
-                              ("head up-and-down", np.array(head["y"]) / scale, 0.2),
-                              ("toward/away", np.array(head["size"]) / scale, 0.05)):
+        for name, sig, mp in (("head side-to-side", np.array(head["x"]) / scale, 0.9),
+                              ("head up-and-down", np.array(head["y"]) / scale, 0.9),
+                              ("toward/away", np.array(head["size"]) / scale, 0.12)):
             f, p = _flips(sig, mp)
             info[name] = (f, round(p, 2))
             best = max(best, f)
     if len(sh["x"]) >= 12:
-        sw = max(float(np.median([abs(v) for v in np.diff(sh["x"])] + [1.0])), 1.0)
-        span = max(float(np.ptp(sh["x"])), 1.0)
+        sw = max(float(np.median(sh["w"])), 10.0)       # measure swings in shoulder widths, not their own range
         for name, sig in (("shoulders side-to-side", sh["x"]), ("shoulders up-and-down", sh["y"])):
-            f, p = _flips(np.array(sig) / max(span, 20.0), 0.3)
+            f, p = _flips(np.array(sig) / sw, 0.25)
             info[name] = (f, round(p, 2))
             best = max(best, f)
     return best, info
@@ -892,7 +900,7 @@ class Demo:
                 resp_state["head_down"] = (gap < 0.15, f"nose above shoulders: {gap:.2f}")
             rs, rinfo = rocking_score(tr, now)
             self.rock_debug = rinfo
-            resp_state["rocking"] = (rs >= 4, f"back-and-forth swings: {rs}")
+            resp_state["rocking"] = (rs >= 5, f"steady back-and-forth swings: {rs}")
         for key, (active, val) in resp_state.items():
             r = self.resp[key]
             if r.update(active, now, val):
@@ -910,6 +918,16 @@ class Demo:
             reacting, self.force, self.episode_at = ["demo (simulated)"], False, -1e9
         if reacting and now - self.episode_at > EPISODE_COOLDOWN:
             self.start_episode(reacting, frame, now)
+
+        # 9b) calming sound only lasts while the student is in distress: stop after 20 s without signs
+        if self.calm.playing():
+            distressed = any(self.resp[k].alerting(now) for k in ("ears", "rocking")) or (
+                self.resp["head_down"].alerting(now) and firing)
+            if distressed:
+                self.last_distress = now
+            elif now - max(getattr(self, "last_distress", 0), self.episode_at) > 20:
+                self.calm.stop()
+                self.log_event("calm again", "calm", "Student calm for 20 s: calming sound stopped", None)
 
         # 10) ADHD attention
         phone_near = False
@@ -949,13 +967,13 @@ class Demo:
     # ------------------------------------------------------------ actions
     def prearm(self, now, frame):
         self.prearm_at, self.prearm_reason = now, self.risk_reason
-        where = self.calm.play()
+        where = None        # calming sound is only for real distress (start_episode), not predictions
         self.pred_open.append({"t": now, "reason": self.risk_reason})
         top = self.risk_parts[0] if self.risk_parts else (0, self.risk_reason, None)
         self.log_event("prediction", "prediction", f"Heads up: {self.risk_reason}", frame,
                        {"risk": round(self.risk, 2), "sound": where}, pkey=top[2],
                        plabel=(top[2] or "").replace("object:", "").capitalize() or self.risk_reason,
-                       detail=f"risk {self.risk:.0%}, calming sound " + (f"on {where}" if where else "held back (no AirPods)"))
+                       detail=f"risk {self.risk:.0%}, warning only (sound plays only if the student shows distress)")
 
     def on_loud_sound(self, now, desc, frame):
         label = desc.split(" (")[0]
@@ -971,7 +989,6 @@ class Demo:
             self.misses += 1
             self.last_pred = f"Last: {label} with no warning"
             detail = "no early warning"
-            self.calm.play()     # react anyway
         self.log_event("loud sound", "noise", label.capitalize(), frame, {"detail": desc}, pkey="sound:" + label,
                        plabel=label.capitalize() + " sound", detail=detail)
 
@@ -992,8 +1009,8 @@ class Demo:
     def hectic_alert(self, now, frame):
         self.hectic_alert_at = now
         name = self.cfg.get("student_name", "The student")
-        where = self.calm.play()
-        sound = (f"Calming sound playing on {where}" if where else "Calming sound held back: no AirPods connected")
+        where = None        # no sound: the student isn't showing distress yet, only the room is busy
+        sound = "No calming sound yet: the student isn't showing signs of distress"
         why = ", ".join(self.hectic_parts or getattr(self, "last_hectic_parts", [])) or "a lot going on"
         aid = self.server.notify(f"Very busy around {name}: {why}. Please check in.",
                                  sorted({lbl for t, lbl in self.recent if now - t <= 20}), sound, kind="hectic")
@@ -1152,7 +1169,7 @@ class Demo:
             y_ban = 34
         if now - self.prearm_at < 8:
             cv2.rectangle(vis, (0, y_ban), (W, y_ban + 34), (0, 120, 230), -1)
-            put(vis, f"HEADS UP: {self.prearm_reason} - may get loud. Calming sound started early.", (10, y_ban + 23), 0.6, (255, 255, 255), 2)
+            put(vis, f"HEADS UP: {self.prearm_reason} - may get loud.", (10, y_ban + 23), 0.6, (255, 255, 255), 2)
         ep = self.episode
         if ep and (now - ep["at"] < 45 or self.calm.playing()):
             cv2.rectangle(vis, (0, H - 40), (W, H), (140, 60, 20), -1)

@@ -80,6 +80,8 @@ class Calming:
         return self.output_name
 
     def can_play(self):
+        if os.path.exists(os.path.join(HERE, ".mute")):      # temporary mute switch (testing)
+            return False
         return self.headphones or self.allow_speakers
 
     def stop(self):

@@ -377,7 +377,7 @@ function render(){if(!S)return;$('who').textContent=S.student;
   +(S.vast.wandb?chip('Weave: '+S.vast.status.weave,S.vast.status.weave.startsWith('tracing')?'ok':'warn'):'')+chip('Student: '+S.mode)+(S.recording?chip('● Recording','bad'):'');
  const r=Math.round(S.risk.value*100);$('riskV').textContent=r+'%';$('riskBar').style.width=r+'%';$('riskBar').style.background=color(r);
  $('riskWhy').textContent=S.risk.reason?('Because: '+S.risk.reason):'Calm';
- $('bHeads').className='banner warn'+(S.risk.prearmed?' show':'');$('bHeads').textContent='Heads up: '+S.risk.prearm_reason+'. Calming sound started early.';
+ $('bHeads').className='banner warn'+(S.risk.prearmed?' show':'');$('bHeads').textContent='Heads up: '+S.risk.prearm_reason+'. Watching for signs of distress.';
  const P=S.predictions;$('hits').textContent=P.hits;$('hitTxt').textContent=(P.hits+P.misses)?`caught early out of ${P.hits+P.misses} loud sounds`+(P.hits?`, ${P.avg_lead.toFixed(1)} s early on average`:''):'No loud sounds yet';
  $('lastHit').textContent=P.last||'';
  const db=S.mic.db;$('db').textContent=S.mic.ok?Math.round(db)+' dB':'--';const dbp=Math.max(0,Math.min(100,(db+70)*1.6));$('dbBar').style.width=dbp+'%';$('dbBar').style.background=color(dbp);
