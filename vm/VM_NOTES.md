@@ -238,3 +238,34 @@ useful for general search too.
 3. Skip pie_cam-3, neighborhood and i24 (dashcam, night streets and highway with almost no people).
 4. Separately, **upload** 1 or 2 short clips with speech and classroom-like activity, to cover
    attention rewind (Canary) and covering ears. The archive has neither.
+
+## Done: Task 1, re-ingest pilot (2026-10-02)
+
+Re-ingested the 3 smartspace `Warehouse_017_Camera_02` chunks (`chunk_0002`, `_0004`, `_0006`, 18 segments)
+with the START_HERE sensory prompt as `custom_prompt`, metadata kept. Started 21:49:09 UTC. All three had
+new captions within about 2 minutes. The backend returned 503 for about 10 s at 21:50:51, and after that
+`GET /api/v1/dashboard/reingest/<job_id>` answered `Re-ingest job not found (backend may have restarted)`
+for all three jobs, so **job status lives in memory and is lost on a backend restart**; check Explore
+captions instead. Explore still shows 6 segments per chunk (no duplicates).
+
+The new captions follow the prompt: they list what is moving, say "No one is covering their ears, rocking,
+or using a phone", and end in `RISK: 2` for all three chunks (Cosmos calls this footage calm).
+
+Before/after (`top_k 10`, `min_similarity 0.15`, `llm_top_n 1`; best score and top hit):
+
+| Query | Before | Before top hit | After | After top hit |
+|-------|-------:|----------------|------:|---------------|
+| crowd of people | 0.256 | `Camera_02_chunk_0008` (old shelving caption) | **0.293** | `Camera_02_chunk_0002` (pilot): "large warehouse … Several people and robots …" |
+| crowding around a person | 0.241 | `sf1_chunk_0007` | 0.241 | same |
+| people approaching fast | 0.283 | `Warehouse_017_Camera_chunk_0006` | **0.293** | `Camera_02_chunk_0002` (pilot) |
+| person standing up suddenly | 0.336 | SDG `run_3 … eye_02` | 0.336 | same |
+| loud machine | 0.158 | `set01_video_chunk_0005` (tram) | 0.158 | same |
+| RISK: 7 | 0.222 | neighborhood "A donut is visible in the frame." | 0.222 | same |
+
+Pilot chunks in the top 10 for "crowd of people": 3 before, 4 after. Extra checks after: "no one covering
+their ears" puts 2 pilot segments in the top 5; "RISK: 2" and "calm space with no sensory triggers" put none.
+
+**Verdict: a small improvement, not a clear one**, so the 3 SF chunks were **not** re-ingested. The re-captioned
+clips now rank first for crowd and approach queries, but the gains are 0.01 to 0.04 and the other four
+queries are unchanged, because Cosmos honestly rated this footage calm and there is no loud machine in it.
+Re-ingesting the SF crosswalk chunks (where the busy moments are) is the next thing to try if a human agrees.
