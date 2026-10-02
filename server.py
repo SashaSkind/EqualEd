@@ -51,6 +51,12 @@ class Server:
             self.alerts.append(a)
             return a["id"]
 
+    def update_alert(self, aid, **fields):
+        with self.lock:
+            for a in self.alerts:
+                if a["id"] == aid:
+                    a.update(fields)
+
     def acked(self, aid):
         with self.lock:
             return any(a["id"] == aid and a["ack"] for a in self.alerts)
@@ -116,6 +122,10 @@ class Server:
                     where = b.say(str(d.get("text", ""))[:3000]); return self._json({"played_on": where})
                 if route == "settings":
                     b.settings(d); return self._json({"ok": True})
+                if route == "archive_scan":
+                    return self._json(b.archive_scan())
+                if route == "archive_ask":
+                    return self._json(b.archive_ask(str(d.get("question", ""))[:500]))
                 if route == "simulate":
                     b.simulate(str(d.get("what", ""))); return self._json({"ok": True})
                 self._send(404, "not found")
@@ -132,7 +142,7 @@ class Server:
 
 STUDENT_PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Classroom Support</title><style>
+<title>EqualEd</title><style>
 :root{--bg:#f6f7f9;--card:#fff;--text:#14171c;--muted:#5d6675;--line:#e3e6eb;--accent:#3b6ef5;
 --red:#d93a3f;--orange:#e07b14;--green:#1f9d5c;--chip:#eef1f6;--bar:#e9ecf1}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1115;--card:#181b22;--text:#e9edf3;--muted:#98a2b3;
@@ -173,9 +183,9 @@ textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:v
 .hide{display:none}label.sw{display:flex;gap:10px;align-items:center;padding:6px 0}
 @media (max-width:600px){.prof{grid-template-columns:110px 1fr 44px}.big{font-size:28px}}
 </style></head><body>
-<header><div class=wrap><h1>Classroom Support · <span id=who></span></h1><div class=chips id=chips></div>
+<header><div class=wrap><h1>EqualEd · <span id=who></span></h1><div class=chips id=chips></div>
 <nav id=nav><button data-t=live class=on>Live</button><button data-t=profile>Trigger profile</button>
-<button data-t=lecture>Lecture rewind (ADHD)</button><button data-t=reading>Reading (dyslexia)</button><button data-t=settings>Settings</button></nav></div></header>
+<button data-t=lecture>Lecture rewind (ADHD)</button><button data-t=reading>Reading (dyslexia)</button><button data-t=archive>Sensory map (VAST)</button><button data-t=settings>Settings</button></nav></div></header>
 <main class=wrap>
 <div id=bHeads class="banner warn"></div><div id=bOver class="banner bad"></div>
 
@@ -185,6 +195,7 @@ textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:v
  <div class=card><h2>Predicted before the sound</h2><div class=big id=hits>0</div>
   <div class=muted id=hitTxt>No loud sounds yet</div><div class="small muted" id=lastHit></div></div>
  <div class=card><h2>Sound in the room</h2><div class=big id=db>--</div><div class=meter><div id=dbBar></div></div><div class=muted id=snd></div></div>
+ <div class=card><h2>NVIDIA Cosmos3-Reason sees</h2><div id=cz class=muted>Waiting for Cosmos...</div></div>
  <div class=card><h2>Overload support</h2><div id=over class=muted>No overload moments yet</div>
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="b" onclick="post('simulate',{what:'overload'})">Simulate overload</button>
   <button class="b" onclick="post('simulate',{what:'stop'})">Stop calming sound</button></div></div>
@@ -216,6 +227,22 @@ textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:v
  <button class=b onclick="post('simulate',{what:'lean'})">Simulate lean-in</button></div>
  <div id=paras></div></div></section>
 
+<section id=t-archive class=hide><div class=grid>
+ <div class=card style="grid-column:1/-1"><h2>Sensory map of the video archive</h2>
+  <p class="muted small">Searches the team's VAST archive (indexed by NVIDIA Cosmos3-Reason, YOLO11 and Cosmos Embed1) for sensory triggers,
+  then ranks every camera and place from most overwhelming to calmest. Use it to plan a calmer route or schedule for a student.</p>
+  <button class="b primary" id=scanB onclick=scan()>Scan the archive</button> <span class="small muted" id=scanStat></span>
+  <div id=places style="margin-top:12px"></div></div>
+ <div class=card style="grid-column:1/-1"><h2>Strongest matching moments</h2><div id=clips class="small muted">Run a scan first.</div></div>
+ <div class=card style="grid-column:1/-1"><h2>Ask the archive</h2>
+  <div style="display:flex;gap:8px"><input type=text id=aq placeholder="e.g. Where is it usually most crowded?">
+  <button class="b primary" id=aqB onclick=askArchive()>Ask</button></div><div class=answer id=aans></div></div>
+ <div class=card style="grid-column:1/-1"><h2>Re-ingest prompt for sensory search</h2>
+  <p class="muted small">Cosmos only writes down what its prompt asks about. To make the archive searchable for sensory load,
+  on the workshop VM ask Cursor: "re-ingest the smart-spaces video with this custom prompt".</p>
+  <textarea id=ip rows=5 readonly></textarea><button class=b style="margin-top:6px" onclick="navigator.clipboard.writeText($('ip').value)">Copy prompt</button></div>
+</div></section>
+
 <section id=t-settings class=hide><div class=card><h2>Settings</h2>
  <label class=sw><input type=checkbox id=spk onchange="post('settings',{allow_speakers:this.checked})"> Play sounds on the laptop speakers too (for stage demos)</label>
  <p class="small muted">Off by default so the class never hears the calming sound. Only the student's AirPods play it.</p>
@@ -236,13 +263,25 @@ function renderParas(){$('paras').innerHTML=PARAS.map((p,i)=>`<p class="para ${i
 async function readCur(){readingIdx=cur;renderParas();const r=await post('say',{text:PARAS[cur]});
  $('rStat').textContent=r.played_on?('Reading paragraph '+(cur+1)+' on '+r.played_on):'Held back: connect AirPods, or allow speakers in Settings.';
  cur=Math.min(cur+1,PARAS.length-1);}
+async function scan(){$('scanB').disabled=true;$('scanStat').textContent='Searching the archive (about 30 s)...';
+ const r=await post('archive_scan',{});$('scanB').disabled=false;
+ if(r.error){$('scanStat').textContent=r.error;return;}$('scanStat').textContent='Scanned at '+r.time;renderArchive(r);}
+function renderArchive(r){if(!r||!r.places)return;const mx=Math.max(0.01,...r.places.map(p=>Math.abs(p.score)));
+ $('places').innerHTML=r.places.length?r.places.map((p,i)=>`<div class=row><span class=grow><b>${i+1}. ${esc(p.place)}</b><br><span class="small muted">${esc(p.top||'calm')}</span>
+  <div class=meter><div style="width:${Math.max(3,100*Math.max(0,p.score)/mx)}%;background:${p.score>mx*.6?'var(--red)':p.score>mx*.3?'var(--orange)':'var(--green)'}"></div></div></span>
+  <span class="right small">${p.score>0?'load '+p.score:'calm'}</span></div>`).join(''):'No matches. Try re-ingesting with the sensory prompt below.';
+ $('clips').innerHTML=r.clips.length?r.clips.map(c=>`<div class=ev><div class=t>${esc(c.trigger)} · ${esc(c.place)} · match ${c.similarity}</div><div>${esc(c.caption)}</div></div>`).join(''):'None.';}
+async function askArchive(){const q=$('aq').value.trim();if(!q)return;$('aqB').disabled=true;$('aans').textContent='Asking the archive...';
+ const r=await post('archive_ask',{question:q});$('aans').textContent=r.answer||'No answer';$('aqB').disabled=false;}
 async function ask(){const q=$('q').value.trim();if(!q)return;$('askB').disabled=true;$('ans').textContent='Thinking...';
  const r=await post('ask',{question:q});$('ans').textContent=(r.answer||'No answer')+(r.source?'\n\n— answered by '+r.source:'');$('askB').disabled=false;}
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter')ask();});
 function render(){if(!S)return;$('who').textContent=S.student;
  const so=S.sound_out;$('chips').innerHTML=chip(S.fps+' FPS','ok')+chip(S.mic.ok?'Mic on':'Mic off: '+S.mic.error,S.mic.ok?'ok':'bad')
   +chip(so.headphones?'Sound: '+so.name:(so.allow_speakers?'Speakers allowed':'Put in AirPods (now '+so.name+')'),so.headphones||so.allow_speakers?'ok':'warn')
-  +chip('Student: '+S.mode)+(S.recording?chip('● Recording','bad'):'');
+  +chip('Cosmos: '+(S.vast.gpu?S.vast.status.cosmos:'add key'),S.vast.status.cosmos=='connected'?'ok':(S.vast.gpu?'bad':'warn'))
+  +chip('Archive: '+(S.vast.archive?S.vast.status.archive:'add login'),S.vast.status.archive=='connected'?'ok':'warn')
+  +chip('W&B: '+(S.vast.wandb?'ready':'add key'),S.vast.wandb?'ok':'warn')+chip('Student: '+S.mode)+(S.recording?chip('● Recording','bad'):'');
  const r=Math.round(S.risk.value*100);$('riskV').textContent=r+'%';$('riskBar').style.width=r+'%';$('riskBar').style.background=color(r);
  $('riskWhy').textContent=S.risk.reason?('Because: '+S.risk.reason):'Calm';
  $('bHeads').className='banner warn'+(S.risk.prearmed?' show':'');$('bHeads').textContent='Heads up: '+S.risk.prearm_reason+'. Calming sound started early.';
@@ -250,7 +289,12 @@ function render(){if(!S)return;$('who').textContent=S.student;
  $('lastHit').textContent=P.last||'';
  const db=S.mic.db;$('db').textContent=S.mic.ok?Math.round(db)+' dB':'--';const dbp=Math.max(0,Math.min(100,(db+70)*1.6));$('dbBar').style.width=dbp+'%';$('dbBar').style.background=color(dbp);
  $('snd').textContent=S.mic.label?('Hearing: '+S.mic.label):'';
- const O=S.overload;$('over').innerHTML=O.active?`<b style="color:var(--red)">${esc(O.reason)}</b><br>${esc(O.sound)}<br>Professor: ${O.acked?'<b style="color:var(--green)">on the way</b>':'notified, waiting'}`:(O.count?`${O.count} overload moment(s) so far. Last: ${esc(O.reason)}`:'No overload moments yet');
+ const C=S.vast.cosmos;$('cz').innerHTML=!S.vast.gpu?'Paste your team GPU key into <b>vast.env</b> to turn on live reasoning by NVIDIA Cosmos3-Reason.'
+  :C?`<div class=big style="font-size:22px">${esc(C.what||'nothing risky')}</div><div class=meter><div style="width:${Math.round(C.risk*100)}%;background:${color(C.risk*100)}"></div></div>
+   <div>${esc(C.why)}</div><div class="small muted">risk ${Math.round(C.risk*100)}% · answered in ${C.latency}s · ${S.vast.cosmos_calls} reads · ${S.vast.cosmos_video?'video':'still frames'}</div>`
+  :(S.vast.cosmos_error?'Error: '+esc(S.vast.cosmos_error):'Watching... first read in a few seconds.');
+ $('ip').value=S.vast.ingest_prompt;if(S.archive&&!$('places').innerHTML)renderArchive(S.archive);
+ const O=S.overload;$('over').innerHTML=O.active?`<b style="color:var(--red)">${esc(O.reason)}</b><br>${esc(O.sound)}${S.overload_cosmos?'<br><b>Cosmos:</b> '+esc(S.overload_cosmos):''}<br>Professor: ${O.acked?'<b style="color:var(--green)">on the way</b>':'notified, waiting'}`:(O.count?`${O.count} overload moment(s) so far. Last: ${esc(O.reason)}`:'No overload moments yet');
  $('bOver').className='banner bad'+(O.active?' show':'');$('bOver').textContent='Overload support active: '+O.reason+(O.acked?' · professor on the way':' · professor notified');
  $('trigs').innerHTML=S.triggers.map(t=>`<div class=row><span class="dot ${!t.live?'off':t.alerting?'on':''}"></span><span class=grow>${esc(t.label)}<br><span class="small muted">${esc(t.value)}</span></span><span class="right small muted">${t.count?'×'+t.count:''}</span></div>`).join('');
  $('reacts').innerHTML=S.reactions.map(t=>`<div class=row><span class="dot ${t.alerting?'on':''}"></span><span class=grow>${esc(t.label)}</span><span class="right small muted">${t.count?'×'+t.count:''}</span></div>`).join('');

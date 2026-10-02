@@ -12,7 +12,7 @@ PORT = 8765
 
 PAGE = """<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Classroom alerts</title><style>
+<title>EqualEd alerts</title><style>
 :root{--bg:#0f1115;--card:#1b1f27;--text:#e9edf3;--muted:#98a2b3;--red:#e5484d;--green:#30a46c}
 body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,system-ui,sans-serif}
 main{max-width:640px;margin:0 auto;padding:20px 16px}
@@ -25,7 +25,7 @@ button{font:inherit;border:0;border-radius:10px;padding:10px 16px;cursor:pointer
 .why{margin:8px 0}.ackbtn{background:var(--red);color:#fff}.done{color:var(--green);font-weight:600}
 .empty{color:var(--muted);text-align:center;padding:40px 0}
 </style></head><body><main>
-<h1>Classroom support alerts</h1><p class=sub>Live from the student's device. Nothing leaves this Wi-Fi.</p>
+<h1>EqualEd · classroom alerts</h1><p class=sub>Live from the student's device. Nothing leaves this Wi-Fi.</p>
 <button id=enable>Tap once to turn on alert sound</button>
 <div id=list><p class=empty>No alerts yet.</p></div></main><script>
 let ctx=null, seen=new Set(), first=true;
@@ -42,6 +42,7 @@ const L=document.getElementById('list');if(!a.length){L.innerHTML='<p class=empt
 L.innerHTML=a.slice().reverse().map(x=>`<div class="card ${x.ack?'ack':''}"><div class=who>${esc(x.student)} may be overwhelmed</div>
 <div class=time>${esc(x.time)}</div><div class=why>${esc(x.reason)}</div>
 ${x.triggers.length?`<div class=time>Just before: ${esc(x.triggers.join(', '))}</div>`:''}
+${x.cosmos?`<div class=why><b>NVIDIA Cosmos:</b> ${esc(x.cosmos)}</div>`:''}
 <div class=time>${esc(x.sound)}</div><div style="margin-top:10px">${x.ack?'<span class=done>Acknowledged</span>':`<button class=ackbtn onclick="ack(${x.id})">I'm on my way</button>`}</div></div>`).join('');}catch(e){}}
 load();setInterval(load,1000);
 </script></body></html>"""

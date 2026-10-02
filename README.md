@@ -1,5 +1,7 @@
 # EqualEd
 
+<img src="assets/icon_1024.png" width="120" alt="EqualEd icon: a brain above a desk">
+
 **One camera, one microphone, one set of models: classroom support for neurodivergent students.**
 
 EqualEd watches a classroom in real time and steps in when a student is struggling.
@@ -19,7 +21,10 @@ Everything runs on the student's laptop. Video and audio never leave the device.
 | Loud things | YOLOE (open vocabulary) | Finds a blender, drill, vacuum, dog, megaphone... by name, before they make a sound |
 | Sound | Loudness reflex + YAMNet | Confirms the loud moment and scores how early the camera predicted it |
 | Lecture | Whisper (offline) | Live transcript for the ADHD rewind |
-| Answers | Claude | "What did I miss?" (only the transcript text is sent, only when asked) |
+| Live scene reasoning | **NVIDIA Cosmos3-Reason** (CoreWeave GPU) | Every few seconds reads the last 3 s of video: "what is about to get loud, crowded or overwhelming, and why". Explains each overload moment to the professor. |
+| Lecture (hosted) | **NVIDIA Canary-1B** (CoreWeave GPU) | Lecture transcript; Whisper on the Mac is the fallback |
+| Archive | **VAST DataEngine + VastDB** (Cosmos3-Reason, YOLO11, Cosmos Embed1) | "Sensory map": searches the indexed footage for triggers and ranks places from most overwhelming to calmest |
+| Answers | **Weights & Biases** inference, then Claude | "What did I miss?" (only the transcript text is sent, only when asked) |
 
 **10 sensory triggers:** crowding around the student, someone in personal space, someone approaching fast,
 rapid movement nearby, commotion, a person standing up, several people getting up, a chair moved or tucked in,
@@ -33,11 +38,22 @@ this student make the risk meter react sooner. The profile is stored only on the
 
 ## Run it (Mac with Apple Silicon, Python 3.11)
 
+Keep the project outside Desktop/Documents/Downloads (e.g. `~/EqualEd`) so the app needs no folder permissions.
+
 ```bash
-./setup.sh      # installs packages, downloads the sound model, runs an offline self-test
-./make_app.sh   # builds EqualEd.app (macOS only grants camera + mic to apps)
-open EqualEd.app
+./setup.sh               # installs packages, downloads the sound model, runs an offline self-test
+./make_app.sh --install  # builds EqualEd.app with its icon and copies it to /Applications
+open -a EqualEd          # or Spotlight / Launchpad
 ```
+
+### Connect the hackathon stack (VAST + NVIDIA on CoreWeave + W&B)
+
+Copy `vast.env.example` to `vast.env` and paste the values from the workshop VM's `/config/<team>.config`
+(`GPU_BEARER_TOKEN`, `INGRESS_URL`, `USERNAME`, `PASSWORD`, `WANDB_*`). `vast.env` is git-ignored.
+Without it everything still runs locally; the dashboard shows which parts are connected.
+
+To make the archive searchable for sensory load, re-ingest a pack (e.g. Pack F, indoor smart spaces) on the VM
+with the custom prompt shown in the dashboard's *Sensory map* tab.
 
 Click **Allow** for the camera and microphone. The terminal log (`run.log`) prints two links:
 
@@ -74,7 +90,9 @@ Other ways to run: `.venv/bin/python sensory_demo.py --video classroom.mp4` (a r
 - Video and audio are processed on the laptop and never uploaded.
 - Snapshots, transcripts and the trigger profile stay in local folders that are git-ignored.
 - The web pages work only on the same Wi-Fi and need a secret link.
-- "What did I miss?" sends only lecture transcript text to Claude, only when the student asks.
+- "What did I miss?" sends only lecture transcript text to W&B or Claude, only when the student asks.
+- Live Cosmos reasoning (only when `GPU_BEARER_TOKEN` is set) sends 3-second, 480p clips to the hackathon's
+  Cosmos3-Reason server. Leave the key out to keep all video on the laptop.
 
 ## Status and limits
 

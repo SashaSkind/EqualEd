@@ -42,6 +42,7 @@ from server import Server
 from audio import AudioMonitor, NoAudio
 from loudobjects import LoudObjects, LOUD_THINGS, held_by_someone, closeness
 from adhd import Attention, Transcriber, ask as adhd_ask, clock
+from vast import Vast, CosmosWatcher, SENSORY_INGEST_PROMPT
 
 POSE_MODEL = "yolo11n-pose.pt"   # joints + face points
 DEVICE = "mps"
@@ -49,7 +50,7 @@ FRAME_W = 960
 PANEL_W = 400
 CHAIR_CLS = 56
 KP_OK = 0.5
-WIN = "Sensory trigger demo (q to quit)"
+WIN = "EqualEd - classroom support (q to quit)"
 EPISODE_COOLDOWN = 60.0         # seconds before another overload alert
 PREARM_AT = 0.6                 # risk level that starts the calming sound early
 PREARM_COOLDOWN = 20.0
@@ -323,7 +324,11 @@ class Demo:
             log("audio:", self.audio.error)
         self.attention = Attention(float(self.cfg.get("adhd_away_seconds", 6)))
         self.session_start = time.time()
-        self.transcriber = Transcriber(self.audio)
+        # hackathon stack: Cosmos3-Reason + Canary-1B on CoreWeave, VSS archive, W&B inference
+        self.vast = Vast()
+        self.cosmos = CosmosWatcher(self.vast, start=use_audio)   # self-test makes no network calls
+        self.archive, self.archive_error = None, ""
+        self.transcriber = Transcriber(self.audio, vast=self.vast)
         # risk + predictions
         self.risk, self.risk_reason, self.risk_parts = 0.0, "", []
         self.prearm_at, self.prearm_reason = -1e9, ""
@@ -352,7 +357,27 @@ class Demo:
         self.inbox.put(("feedback", eid, verdict))
 
     def ask(self, q):
-        return adhd_ask(q, self.transcriber.recent(400), [dict(d) for d in self.attention.drops])
+        return adhd_ask(q, self.transcriber.recent(400), [dict(d) for d in self.attention.drops], vast=self.vast)
+
+    def archive_scan(self):
+        if not self.vast.archive_on:
+            return {"error": "Add INGRESS_URL, USERNAME and PASSWORD to vast.env to search the VAST archive."}
+        try:
+            self.archive, self.archive_error = self.vast.sensory_map(), ""
+            self.log_event("archive scan", "archive", f"Sensory map: {len(self.archive['places'])} places ranked", None)
+            return self.archive
+        except Exception as e:
+            self.archive_error = f"{type(e).__name__}: {str(e)[:160]}"
+            return {"error": self.archive_error}
+
+    def archive_ask(self, q):
+        if not self.vast.archive_on:
+            return {"answer": "Add INGRESS_URL, USERNAME and PASSWORD to vast.env first."}
+        try:
+            r = self.vast.archive_ask(q)
+            return {"answer": r.get("answer", ""), "evidence": r.get("evidence")}
+        except Exception as e:
+            return {"answer": f"Archive question failed: {type(e).__name__}: {str(e)[:160]}"}
 
     def say(self, text):
         return self.calm.say(text)
@@ -432,6 +457,8 @@ class Demo:
                 self.calm.stop()
             elif kind == "simulate" and a == "lean":
                 self.lean_count += 1
+
+        self.cosmos.push(now, frame)
 
         # 1) people, joints, face points, stable ids
         res = self.pose.track(frame, persist=True, device=DEVICE, conf=0.35, verbose=False)[0]
@@ -573,6 +600,9 @@ class Demo:
                 r = (LOUD_THINGS[name] * min(1.0, conf / 0.6) * closeness(box, H)
                      * (1.25 if held else 1.0) * self.mult("object:" + name))
                 parts.append((min(r, 0.98), f"{name} {'in someone' + chr(39) + 's hand' if held else 'in view'}", "object:" + name))
+        cz = self.cosmos.fresh(now)
+        if cz and cz["risk"] >= 0.2:
+            parts.append((min(cz["risk"] * 0.9 * self.mult("cosmos"), 0.95), f"Cosmos: {cz['what'] or 'scene may get overwhelming'}", "cosmos"))
         for key, base in TRIGGER_RISK.items():
             if self.trig[key].alerting(now):
                 parts.append((min(base * self.mult(key), 0.95), self.trig[key].label.lower(), key))
@@ -698,6 +728,13 @@ class Demo:
         self.log_event("overload", "overload", reason, frame, {"linked_triggers": causes, "sound": sound},
                        detail="professor notified" + (f" · after: {', '.join(causes)}" if causes else ""))
 
+        def explained(text, aid=aid, ep=self.episode):
+            ep["cosmos"] = text
+            self.server.update_alert(aid, cosmos=text)
+            self.write_event({"kind": "cosmos explanation", "key": "overload", "label": text})
+            log("COSMOS", text)
+        self.cosmos.explain_async(reason, explained)
+
     def check_stand(self, tr, k, c, b, now, H):
         p = posture(k, c)
         if p == "sit":
@@ -754,6 +791,12 @@ class Demo:
             "reading": {"active": self.reading, "lean_count": self.lean_count},
             "recording": self.recording, "professor_url": self.server.prof_url,
             "objects": [[n, round(c, 2), bool(h)] for n, c, b, h in self.objects],
+            "vast": {"status": self.vast.status, "gpu": self.vast.gpu_on, "archive": self.vast.archive_on,
+                     "wandb": self.vast.wandb_on, "cosmos": self.cosmos.latest, "cosmos_error": self.cosmos.error,
+                     "cosmos_calls": self.cosmos.calls, "cosmos_video": self.vast.video_mode,
+                     "ingest_prompt": SENSORY_INGEST_PROMPT},
+            "archive": self.archive, "archive_error": self.archive_error,
+            "overload_cosmos": (ep or {}).get("cosmos", ""),
         }
         self._state = json.dumps(st)
 
@@ -850,7 +893,13 @@ class Demo:
         if self.recording:
             cv2.circle(strip, (x + 6, 136), 6, (0, 0, 255), -1)
             put(strip, "Recording backup video (r to stop)", (x + 18, 140), 0.4, (0, 0, 255))
-        put(strip, "Dashboard: see run.log / browser", (x, 160), 0.38, (150, 150, 150))
+        cz = self.cosmos.fresh(now, 20)
+        if cz:
+            put(strip, f"Cosmos: {cz['what']} ({cz['risk']:.0%})"[:46], (x, 160), 0.38, (120, 255, 120))
+        elif self.vast.gpu_on:
+            put(strip, ("Cosmos: " + (self.cosmos.error or "watching..."))[:46], (x, 160), 0.38, (150, 150, 150))
+        else:
+            put(strip, "Cosmos: add key in vast.env", (x, 160), 0.38, (150, 150, 150))
         put(strip, "s=overload m=mute b/f=bothered/fine", (x, 178), 0.38, (150, 150, 150))
         put(strip, "l=lean r=record a=auto c=cam q=quit", (x, 194), 0.38, (150, 150, 150))
         return np.vstack([vis, strip])
@@ -943,6 +992,9 @@ def main():
     log("microphone permission:", "granted" if mic_ok else "denied")
     demo = Demo(use_audio=mic_ok)
     log("student dashboard:", demo.server.student_url)
+    if cfg.get("open_dashboard", True) and demo.server.student_url.startswith("http"):
+        import subprocess
+        subprocess.Popen(["open", demo.server.student_url])
     log("professor page:", demo.server.prof_url)
     cv2.namedWindow(WIN, cv2.WINDOW_AUTOSIZE)
     raise_window(WIN)

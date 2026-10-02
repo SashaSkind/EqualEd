@@ -73,8 +73,9 @@ class Attention:
 
 
 class Transcriber:
-    def __init__(self, audio, chunk_seconds=8.0):
-        self.audio, self.chunk = audio, chunk_seconds
+    def __init__(self, audio, chunk_seconds=8.0, vast=None):
+        self.audio, self.chunk, self.vast = audio, chunk_seconds, vast
+        self.canary_fails = 0
         self.segments = []       # {"t", "end", "text"}
         self.lock = threading.Lock()
         self.status = "loading speech model..."
@@ -84,11 +85,20 @@ class Transcriber:
         else:
             self.status = "off (no microphone)"
 
-    def _run(self):
-        try:
+    def _whisper(self):
+        if self.model is None:
             from faster_whisper import WhisperModel
             self.model = WhisperModel("base.en", device="cpu", compute_type="int8")
-            self.status = "listening"
+        return self.model
+
+    def _use_canary(self):
+        return self.vast is not None and self.vast.gpu_on and self.canary_fails < 3
+
+    def _run(self):
+        try:
+            if not self._use_canary():
+                self._whisper()
+            self.status = "listening (NVIDIA Canary-1B)" if self._use_canary() else "listening (Whisper on this Mac)"
         except Exception as e:
             self.status = f"speech model failed: {e}"
             return
@@ -99,8 +109,28 @@ class Transcriber:
             x, pos, t0 = self.audio.since(pos)
             if len(x) < SR or float(np.sqrt(np.mean(x * x))) < 0.003:
                 continue
+            if self._use_canary():
+                try:
+                    import io, wave
+                    buf = io.BytesIO()
+                    with wave.open(buf, "wb") as w:
+                        w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+                        w.writeframes((np.clip(x, -1, 1) * 32767).astype(np.int16).tobytes())
+                    text = self.vast.canary(buf.getvalue())
+                    self.canary_fails = 0
+                    if text:
+                        seg = {"t": t0, "end": t0 + len(x) / SR, "text": text}
+                        with self.lock:
+                            self.segments.append(seg)
+                        f.write(json.dumps(seg) + "\n"); f.flush()
+                    continue
+                except Exception as e:
+                    self.canary_fails += 1
+                    if self.canary_fails >= 3:
+                        self.status = f"listening (Whisper on this Mac; Canary failed: {type(e).__name__})"
+                    continue
             try:
-                segs, _ = self.model.transcribe(x, language="en", beam_size=1, vad_filter=True)
+                segs, _ = self._whisper().transcribe(x, language="en", beam_size=1, vad_filter=True)
                 for s in segs:
                     text = s.text.strip()
                     if not text:
@@ -142,12 +172,18 @@ def _local_answer(question, segments, drops, now):
     return head + "\n" + "\n".join(f"[{clock(s['t'])}] {s['text']}" for s in pick[:6])
 
 
-def ask(question, segments, drops):
+def ask(question, segments, drops, vast=None):
     """Returns (answer, source)."""
     now = time.time()
     if not segments:
         return "No lecture has been transcribed yet. Play or give the lecture near the Mac's microphone first.", "none"
     prompt = _prompt(question, segments, drops, now)
+    # 0) Weights & Biases serverless inference (the hackathon's app-reasoning stack)
+    if vast is not None and vast.wandb_on:
+        try:
+            return vast.wandb_chat(prompt)
+        except Exception:
+            pass
     # 1) Anthropic SDK, if this Mac has API credentials (env, `ant auth login`, or a .env file here)
     envf = os.path.join(HERE, ".env")
     if os.path.exists(envf):

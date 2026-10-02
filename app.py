@@ -1,4 +1,4 @@
-"""Entry point the 'YOLO Webcam' app runs.
+"""Entry point that EqualEd.app runs.
 
 Picks which demo to run from mode.txt:
   sensory  (default) -> sensory_demo.py   pose + 10 sensory triggers

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#36C2B4"/>
+      <stop offset="1" stop-color="#3B5BDB"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7CB86"/>
+      <stop offset="1" stop-color="#E3A254"/>
+    </linearGradient>
+    <linearGradient id="brain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD0E1"/>
+      <stop offset="1" stop-color="#FF9DC2"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <circle cx="512" cy="420" r="300" fill="url(#glow)"/>
+  <!-- desk -->
+  <rect x="236" y="690" width="40" height="130" rx="12" fill="#C9853C"/>
+  <rect x="748" y="690" width="40" height="130" rx="12" fill="#C9853C"/>
+  <rect x="200" y="652" width="624" height="56" rx="20" fill="url(#wood)"/>
+  <rect x="200" y="690" width="624" height="18" rx="9" fill="#D4913F" opacity="0.7"/>
+  <!-- open book on the desk -->
+  <path d="M392 652 L392 616 Q452 596 512 618 Q572 596 632 616 L632 652 Z" fill="#FFFFFF"/>
+  <path d="M512 618 L512 652" stroke="#C7D2FE" stroke-width="6"/>
+  <path d="M414 628 Q452 616 492 630 M532 630 Q572 616 610 628" stroke="#C7D2FE" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <!-- brain -->
+  <g fill="url(#brain)">
+    <circle cx="405" cy="365" r="92"/><circle cx="352" cy="448" r="84"/><circle cx="420" cy="500" r="80"/>
+    <circle cx="470" cy="318" r="80"/><circle cx="619" cy="365" r="92"/><circle cx="672" cy="448" r="84"/>
+    <circle cx="604" cy="500" r="80"/><circle cx="554" cy="318" r="80"/><circle cx="512" cy="430" r="120"/>
+    <circle cx="512" cy="500" r="86"/>
+  </g>
+  <g stroke="#E86B9A" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M512 282 C 494 340, 530 392, 508 446 C 492 486, 526 520, 512 572"/>
+    <path d="M356 352 C 384 330, 420 344, 418 374 C 416 398, 446 410, 466 394"/>
+    <path d="M318 444 C 350 428, 372 452, 398 438 C 418 428, 430 446, 452 440"/>
+    <path d="M372 520 C 392 496, 424 512, 428 488"/>
+    <path d="M444 296 C 428 318, 446 336, 432 356"/>
+    <path d="M458 470 C 470 498, 446 520, 466 548"/>
+    <path d="M668 352 C 640 330, 604 344, 606 374 C 608 398, 578 410, 558 394"/>
+    <path d="M706 444 C 674 428, 652 452, 626 438 C 606 428, 594 446, 572 440"/>
+    <path d="M652 520 C 632 496, 600 512, 596 488"/>
+    <path d="M580 296 C 596 318, 578 336, 592 356"/>
+    <path d="M566 470 C 554 498, 578 520, 558 548"/>
+  </g>
+  <!-- sparkles -->
+  <path d="M770 240 L782 272 L814 284 L782 296 L770 328 L758 296 L726 284 L758 272 Z" fill="#FFFFFF"/>
+  <path d="M262 270 L270 290 L290 298 L270 306 L262 326 L254 306 L234 298 L254 290 Z" fill="#FFFFFF" opacity="0.85"/>
+</svg>
