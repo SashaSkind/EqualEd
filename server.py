@@ -57,6 +57,49 @@ class Server:
                 if a["id"] == aid:
                     a.update(fields)
 
+    def teacher_view(self):
+        """What the teacher sees: no video, no transcript, just how the student is doing."""
+        try:
+            st = json.loads(self.bridge.state_json() or "{}")
+        except ValueError:
+            st = {}
+        try:
+            cfg = json.load(open(os.path.join(HERE, "config.json")))
+        except Exception:
+            cfg = {}
+        trig = [t for t in st.get("triggers", []) if t.get("alerting")]
+        reac = [r for r in st.get("reactions", []) if r.get("alerting")]
+        ov, hc = st.get("overload", {}), st.get("hectic", {})
+        return json.dumps({
+            "t": st.get("t"), "student": cfg.get("student_name", self.student),
+            "grade": cfg.get("student_grade", ""), "plan": cfg.get("support_plan", ""),
+            "accommodations": cfg.get("accommodations", []),
+            "online": bool(st), "locked": hc.get("locked", False), "busy": hc.get("value", 0),
+            "busy_parts": hc.get("parts", []), "active_triggers": [t["label"] for t in trig],
+            "active_trigger_keys": [t["key"] for t in trig],
+            "reactions": [r["label"] for r in reac], "overload": ov.get("active", False),
+            "overload_reason": ov.get("reason", ""), "acked": ov.get("acked", False),
+            "calming_sound": st.get("sound_out", {}).get("playing", False),
+            "attention": st.get("attention", {}).get("state", ""),
+            "focused_pct": st.get("attention", {}).get("focused_pct", 100),
+            "trigger_counts": {t["label"]: t.get("count", 0) for t in st.get("triggers", []) if t.get("count")},
+        })
+
+    def class_view(self):
+        """The whole class for the teacher: the live student from this laptop plus the roster."""
+        live = json.loads(self.teacher_view())
+        try:
+            cfg = json.load(open(os.path.join(HERE, "config.json")))
+        except Exception:
+            cfg = {}
+        roster = []
+        for st in cfg.get("class", []):
+            row = dict(st)
+            if st.get("live"):
+                row.update({"live_state": live, "status": None})
+            roster.append(row)
+        return json.dumps({"class_name": cfg.get("class_name", "My class"), "students": roster})
+
     def acked(self, aid):
         with self.lock:
             return any(a["id"] == aid and a["ack"] for a in self.alerts)
@@ -90,6 +133,10 @@ class Server:
                 p = self.path.split("?")[0]
                 if p in (pbase, pbase.rstrip("/")):
                     return self._send(200, PROFESSOR_PAGE)
+                if p == pbase + "student.json":
+                    return self._send(200, srv_self.teacher_view(), "application/json")
+                if p == pbase + "class.json":
+                    return self._send(200, srv_self.class_view(), "application/json")
                 if p == pbase + "alerts.json":
                     with srv_self.lock:
                         return self._json(srv_self.alerts)

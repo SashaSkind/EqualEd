@@ -1,7 +1,7 @@
 # EqualEd demo script (90 seconds)
 
 **Setup before going on stage (2 min):** laptop on the table facing the presenter's chair, `open -a EqualEd`,
-dashboard open on the laptop, professor page open on a phone (same Wi-Fi or phone hotspot), tap
+dashboard open on the laptop, teacher dashboard (professor link) open on a phone or second laptop (same Wi-Fi or phone hotspot), tap
 "Tap once to turn on alert sound and pop-ups" on the phone. Dashboard > Settings: turn ON "Play sounds on the
 laptop speakers" so the judges hear the calming sound. Two teammates standing off to the side.
 

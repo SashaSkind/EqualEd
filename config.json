@@ -1,7 +1,146 @@
 {
-  "student_name": "Demo student",
+  "student_name": "Philip M.",
   "camera_url": "",
   "allow_speakers": false,
   "adhd_away_seconds": 6,
-  "open_dashboard": true
+  "open_dashboard": true,
+  "accommodations": [
+    {
+      "icon": "headphones",
+      "title": "Noise-cancelling headphones",
+      "detail": "May wear them any time, including during group work and assemblies."
+    },
+    {
+      "icon": "door",
+      "title": "Break pass to the quiet corner",
+      "detail": "Can leave for up to 10 minutes without asking out loud. Show the pass card; no questions in front of peers."
+    },
+    {
+      "icon": "seat",
+      "title": "Preferential seating",
+      "detail": "Seat at the edge of the room, away from the door, the projector fan and high-traffic paths."
+    },
+    {
+      "icon": "clock",
+      "title": "Warning before transitions",
+      "detail": "Give a 5-minute and a 1-minute heads-up before the class moves, stands up or switches activity."
+    },
+    {
+      "icon": "list",
+      "title": "Written instructions",
+      "detail": "Key instructions also on the board or in the class chat, not spoken only."
+    },
+    {
+      "icon": "hand",
+      "title": "No unexpected touch",
+      "detail": "Ask before touching, even a tap on the shoulder. Approach from the front and speak quietly."
+    },
+    {
+      "icon": "time",
+      "title": "Extended time (1.5x)",
+      "detail": "On tests and timed work, in a low-distraction room when possible."
+    }
+  ],
+  "student_grade": "Grade 8",
+  "support_plan": "IEP \u00b7 autism, sensory processing",
+  "class_name": "Period 3 \u00b7 Biology",
+  "class": [
+    {
+      "name": "Philip M.",
+      "live": true,
+      "grade": "Grade 8",
+      "plan": "IEP",
+      "needs": "Autism \u00b7 sensory processing",
+      "accommodations": [
+        "Noise-cancelling headphones",
+        "Break pass to the quiet corner",
+        "Preferential seating",
+        "Warning before transitions",
+        "Written instructions",
+        "No unexpected touch",
+        "Extended time (1.5x)"
+      ]
+    },
+    {
+      "name": "Ava R.",
+      "grade": "Grade 8",
+      "plan": "504",
+      "needs": "ADHD",
+      "status": "calm",
+      "accommodations": [
+        "Movement breaks every 20 min",
+        "Seat near the teacher",
+        "Chunked assignments",
+        "Fidget tool allowed",
+        "Extended time (1.5x)"
+      ]
+    },
+    {
+      "name": "Leo K.",
+      "grade": "Grade 8",
+      "plan": "IEP",
+      "needs": "Dyslexia",
+      "status": "calm",
+      "accommodations": [
+        "Text-to-speech for readings",
+        "Audiobooks",
+        "Answers given orally",
+        "Extended time (1.5x)",
+        "No reading aloud unless he volunteers"
+      ]
+    },
+    {
+      "name": "Sofia G.",
+      "grade": "Grade 8",
+      "plan": "504",
+      "needs": "Anxiety",
+      "status": "calm",
+      "accommodations": [
+        "Advance notice before presentations",
+        "Quiet check-ins, not in front of the class",
+        "Tests in a separate room",
+        "Option to present to the teacher only"
+      ]
+    },
+    {
+      "name": "Noah T.",
+      "grade": "Grade 8",
+      "plan": "IEP",
+      "needs": "Autism \u00b7 minimal speech",
+      "status": "calm",
+      "accommodations": [
+        "Visual schedule on the desk",
+        "Communication app on tablet",
+        "Noise-cancelling headphones",
+        "Warning before transitions",
+        "Aide support in labs"
+      ]
+    },
+    {
+      "name": "Zara P.",
+      "grade": "Grade 8",
+      "plan": "IEP",
+      "needs": "Dyspraxia",
+      "status": "calm",
+      "accommodations": [
+        "Typing instead of handwriting",
+        "Extra time for lab and motor tasks",
+        "Printed notes",
+        "Lab partner for fine-motor steps"
+      ]
+    },
+    {
+      "name": "Eli W.",
+      "grade": "Grade 8",
+      "plan": "504",
+      "needs": "Tourette syndrome",
+      "status": "offline",
+      "accommodations": [
+        "Tic breaks without asking",
+        "No penalty for tics",
+        "Tests in a separate room",
+        "Seat near the door"
+      ]
+    }
+  ]
 }
