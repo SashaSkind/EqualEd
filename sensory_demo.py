@@ -896,7 +896,22 @@ class Demo:
                 wrist_info.append({"conf": round(float(c[wr]), 2), "dist_to_ear": None if dist is None else round(float(dist), 2),
                                    "raised": bool(raised)})
             self.ear_debug = {"hands": hands, "wrists": wrist_info, "ears_seen": int(sum(c[i] > 0.3 for i in (L_EAR, R_EAR)))}
-            ears = hands >= 2      # both hands at the ears; one hand on the face is usually a chin rest
+            # Both hands must be on OPPOSITE sides of the head, each by its own ear
+            # (two wrists by one ear = one hand adjusting an earbud or scratching).
+            face_x = k[NOSE][0] if c[NOSE] > 0.3 else (float(np.mean([e[0] for e in ear_pts])) if ear_pts else None)
+            sides = set()
+            if face_x is not None and len(ear_pts) >= 1:
+                ear_y = min(e[1] for e in ear_pts)
+                for wr in (L_WR, R_WR):
+                    if c[wr] < 0.35 or k[wr][1] > ear_y + 0.35 * sw:
+                        continue
+                    side = "left" if k[wr][0] < face_x else "right"
+                    side_ears = [e for e in ear_pts if (e[0] < face_x) == (side == "left")] or \
+                                [np.array([2 * face_x - ear_pts[0][0], ear_pts[0][1]])]
+                    if min(np.linalg.norm(k[wr] - e) for e in side_ears) < 0.75 * sw and abs(k[wr][0] - face_x) > 0.25 * sw:
+                        sides.add(side)
+            self.ear_debug["sides"] = sorted(sides)
+            ears = len(sides) == 2
             resp_state["ears"] = (ears, f"hands at ears: {hands}")
             shm = mean_pt(k, c, (L_SH, R_SH))
             if shm is not None and c[NOSE] > KP_OK:
