@@ -9,6 +9,7 @@ from __future__ import annotations
 import collections
 import csv
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -30,7 +31,14 @@ DISTRESS = (
 
 
 def probe_has_audio(path: str | Path) -> bool:
-    """True if ffprobe reports at least one audio stream."""
+    """True if ffprobe (or plain ffmpeg, when ffprobe is missing) reports an audio stream."""
+    if not shutil.which("ffprobe"):
+        try:
+            r = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-i", str(path)],
+                               capture_output=True, text=True, timeout=30)
+            return "Audio:" in r.stderr
+        except Exception:
+            return False
     try:
         out = subprocess.check_output(
             ["ffprobe", "-v", "error", "-select_streams", "a",

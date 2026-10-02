@@ -1,4 +1,39 @@
-# VM notes (Phase 1 findings)
+# VM notes
+
+## Report (2026-10-02, end of NEXT_STEPS)
+
+**Deploy URL: [http://video-lab-team-17.cosmos.vastdata.com/app](http://video-lab-team-17.cosmos.vastdata.com/app)**
+(team-17 cluster, `bash vm/deploy.sh` to update).
+
+What works, on the VM and in the deployed pod:
+- Live tab: YOLO11n + YOLOE detection on CPU (about 40 fps in the pod), "too close" and "rushing" moments,
+  sound level from the clip, Cosmos3-Reason risk every 2 s with the reason line, risk-over-time chart and
+  "Seen it coming" lead time. Clip picker with 6 archive clips downloaded through VSS.
+- Search tab: VSS search, 7 presets, playback through the app's clip proxy, "analyze on Live", W&B
+  Llama-3.3-70B summary traced with Weave.
+- Sensory map tab: 9 archive places ranked by sensory load.
+
+Cosmos lead time: on the SF crosswalk clip `sf2_chunk_0019`, 2 of 4 busy moments were warned **1.3 s and
+5.4 s early**; on the warehouse clip, none. Cosmos is noisy at temperature 0.2, so treat these as anecdotal.
+
+Before/after search (re-ingest pilot on 3 warehouse chunks), best score:
+
+| Query | Before | After |
+|-------|-------:|------:|
+| crowd of people | 0.256 | 0.293 |
+| crowding around a person | 0.241 | 0.241 |
+| people approaching fast | 0.283 | 0.293 |
+| person standing up suddenly | 0.336 | 0.336 |
+| loud machine | 0.158 | 0.158 |
+| RISK: 7 | 0.222 | 0.222 |
+
+Blocked or open:
+- Archive search returned 500 at about 23:10 UTC because the backend's Cosmos-Embed1 model reported "not
+  ready". Login, streaming and the sensory map still work; search comes back when that model does.
+- SF chunks were not re-ingested (the warehouse pilot gain was small).
+- Canary, the GPU YOLO endpoint and YAMNet are not used yet.
+
+## Phase 1 findings
 
 Written by the VM agent on 2026-10-02 from the VAST Builders Challenge VM (team-17).
 Everything below was measured on this VM, not copied from docs. No secret values.
@@ -343,3 +378,20 @@ again". The Live cards are "Sensory risk", "Seen it coming", "Busy around a pers
 On 2026-10-02 at about 23:10, VSS search returned 500 for every query: the backend's Cosmos-Embed1 model
 said "Model cosmos-embed1 is not ready". The Search tab now shows "the archive's search model is offline
 right now" instead of a bare HTTP error. Login, clip streaming and the sensory map still worked.
+
+## Done: Task 4, deploy (2026-10-02, about 13 minutes)
+
+`kubectl` v1.37.1 in `~/bin` (checksum verified), `KUBECONFIG=/config/team-17-k8s.yaml`, namespace `team-17`.
+`vm/deploy.sh` creates ConfigMap `equaled-app-code` (the `vm/*.py` files, requirements and
+`archive_sensory_labels.json`, about 150 KB), Secret `equaled-app-creds`, and Deployment, Service and
+Ingress `equaled-app` at `/app` on `video-lab-team-17.cosmos.vastdata.com`. The pod is ready about 2 minutes
+after a restart (pip install plus 630 MB of weights).
+
+Fixes found on the way:
+- Ultralytics pulls in the desktop `opencv-python`, which needs `libxcb` (missing in the slim image), so the
+  start script swaps it for `opencv-python-headless`.
+- The public host does not resolve inside the cluster, so the pod sets
+  `INGRESS_URL=http://video-backend-service:8000` (the backend Ingress's service).
+- The slim image has no ffmpeg; `imageio-ffmpeg` provides one, but no `ffprobe`, so `audio_watch.py` now
+  detects audio with `ffmpeg -i` when `ffprobe` is missing.
+- The pod can reach Cosmos on the GPU host directly (`/v1/models` returned 200).
