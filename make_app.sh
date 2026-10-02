@@ -57,3 +57,18 @@ if [[ "$1" == "--install" ]]; then
   rm -rf "/Applications/EqualEd Teacher.app"; cp -R "EqualEd Teacher.app" /Applications/
 fi
 echo "Built EqualEd Teacher.app (opens the teacher dashboard)."
+
+# Third app: "EqualEd Camera" opens the camera view in its own window (separate from the teacher dashboard).
+rm -rf "EqualEd Camera.app"
+osacompile -o "EqualEd Camera.app" camera_app.applescript
+CSET=$(mktemp -d)/c.iconset; mkdir -p "$CSET"
+for s in 16 32 128 256 512; do
+  sips -z $s $s assets/icon_camera_1024.png --out "$CSET/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s*2)) $((s*2)) assets/icon_camera_1024.png --out "$CSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$CSET" -o "EqualEd Camera.app/Contents/Resources/applet.icns"
+codesign --force --deep --sign - "EqualEd Camera.app"
+if [[ "$1" == "--install" ]]; then
+  rm -rf "/Applications/EqualEd Camera.app"; cp -R "EqualEd Camera.app" /Applications/
+fi
+echo "Built EqualEd Camera.app (camera view, separate window)."

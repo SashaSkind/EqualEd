@@ -45,6 +45,7 @@ class Server:
         self.prof_url = f"http://{ip}:{PORT}/p/{self.ptoken}/"
         self.student_url = f"http://{ip}:{PORT}/s/{self.stoken}/"
         self.app_url = f"http://{ip}:{PORT}/s/{self.stoken}/app"
+        self.camera_url = f"http://{ip}:{PORT}/s/{self.stoken}/camera"
         self._serve()
 
     # professor alerts ------------------------------------------------------
@@ -167,6 +168,8 @@ class Server:
                     return self._send(200, STUDENT_PAGE.replace("</body>", RELOADER + "</body>"))
                 if p == sbase + "app":
                     return self._send(200, APP_SHELL.replace("__TEACHER__", pbase).replace("__STUDENT__", sbase).replace("</body>", RELOADER + "</body>"))
+                if p == sbase + "camera":
+                    return self._send(200, CAMERA_PAGE.replace("</body>", RELOADER + "</body>"))
                 if p == sbase + "live.mjpg":
                     return self._mjpeg()
                 if p == sbase + "state.json":
@@ -440,25 +443,46 @@ main{flex:1;position:relative}iframe{position:absolute;inset:0;width:100%;height
 @media (max-width:800px){#live.on{flex-direction:column}.side{width:auto}}
 </style></head><body>
 <nav><div class=logo><i></i>EqualEd</div>
-<div class=tabs><button data-p=teacher class=on>Teacher</button><button data-p=live>Live view</button><button data-p=student>Student</button></div>
-<span class=sp></span><span class=hint>Live view stays on this device</span></nav>
+<div class=tabs><button data-p=teacher class=on>Teacher</button><button data-p=student>Student</button></div>
+<span class=sp></span><span class=hint>No video in this window</span></nav>
 <main>
 <iframe id=teacher class=on src="__TEACHER__" title="Teacher dashboard"></iframe>
-<div id=live><div class=view><img id=feed alt="EqualEd live camera view with triggers drawn on it"></div>
- <div class=side><h3>Student</h3>
-  <button onclick="cmd('lock')">Lock onto the student</button><button onclick="cmd('auto')">Unlock</button>
-  <p>Or raise both hands for 1 second in front of the camera.</p>
-  <h3>Demo</h3><button class=warn onclick="cmd('overload')">Simulate overload</button>
-  <button onclick="cmd('stop')">Stop calming sound</button><button onclick="cmd('lean')">Simulate lean-in (reading)</button></div></div>
 <iframe id=student src="__STUDENT__" title="Student dashboard"></iframe>
 </main><script>
-const feed=document.getElementById('feed');
 function show(p){document.querySelectorAll('nav button[data-p]').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
  ['teacher','student'].forEach(id=>document.getElementById(id).classList.toggle('on',id===p));
- document.getElementById('live').classList.toggle('on',p==='live');
- if(p==='live'){if(!feed.src)feed.src='live.mjpg?'+Date.now()}else{feed.removeAttribute('src')}
  try{localStorage.setItem('eq_tab',p)}catch(e){}}
 document.querySelectorAll('nav button[data-p]').forEach(b=>b.onclick=()=>show(b.dataset.p));
 async function cmd(what){await fetch('simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({what})})}
-let start='teacher';try{start=localStorage.getItem('eq_tab')||'teacher'}catch(e){}show(start);
+let start='teacher';try{start=localStorage.getItem('eq_tab')||'teacher'}catch(e){}if(start==='live')start='teacher';show(start);
+</script></body></html>"""
+
+
+CAMERA_PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>EqualEd Camera</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel=stylesheet>
+<style>
+:root{--bg:#EEEEEC;--card:#FFFFFF;--ink:#111214;--muted:#8E9197;--glass:0 2px 6px #0000000f,0 0 0 1px #ffffffcc inset}
+*{box-sizing:border-box}html,body{margin:0;height:100%}body{background:var(--bg);color:var(--ink);font:15px/1.4 Inter,-apple-system,system-ui,sans-serif;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+header{display:flex;align-items:center;gap:10px;padding:14px 22px}
+.logo{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:500;letter-spacing:-.03em}.logo i{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#36C2B4,#3B5BDB)}
+.logo span{color:var(--muted);font-weight:400}.sp{flex:1}.hint{font-size:12px;color:var(--muted);background:var(--card);border-radius:999px;padding:7px 12px;box-shadow:var(--glass)}
+main{flex:1;display:flex;gap:18px;padding:4px 22px 22px;min-height:0}
+.view{flex:1;display:flex;align-items:center;justify-content:center;background:#0E0F12;border-radius:28px;overflow:hidden;min-width:0;box-shadow:0 10px 30px #0000001f}
+.view img{max-width:100%;max-height:100%;object-fit:contain}
+.side{width:280px;display:flex;flex-direction:column;gap:10px;background:var(--card);border-radius:28px;padding:20px;box-shadow:0 10px 30px #0000000d;align-self:flex-start}
+.side h3{font-size:20px;font-weight:500;letter-spacing:-.02em;margin:4px 0 4px}
+.side button{font:500 14px Inter,-apple-system,sans-serif;text-align:left;border:0;background:#F6F6F4;color:var(--ink);border-radius:16px;padding:13px 16px;cursor:pointer}
+.side button:hover{background:#EFEFEC}.side button.warn{background:#FCE7F1;color:#C2316F}.side p{font-size:13px;color:var(--muted);margin:0 0 6px}
+@media (max-width:800px){main{flex-direction:column}.side{width:auto}}
+</style></head><body>
+<header><div class=logo><i></i>EqualEd <span>Camera</span></div><span class=sp></span><span class=hint>Only on this device. Not shown to the teacher.</span></header>
+<main><div class=view><img id=feed alt="EqualEd camera view with people, the student's bubble and triggers drawn on it"></div>
+<div class=side><h3>Student</h3>
+<button onclick="cmd('lock')">Lock onto the student</button><button onclick="cmd('auto')">Unlock</button>
+<p>Or raise both hands for 1 second in front of the camera.</p>
+<h3>Demo</h3><button class=warn onclick="cmd('overload')">Simulate overload</button>
+<button onclick="cmd('stop')">Stop calming sound</button><button onclick="cmd('lean')">Simulate lean-in (reading)</button></div></main>
+<script>
+const feed=document.getElementById('feed');function start(){feed.src='live.mjpg?'+Date.now()}feed.onerror=()=>setTimeout(start,1500);start();
+async function cmd(what){await fetch('simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({what})})}
 </script></body></html>"""

@@ -85,7 +85,7 @@ background:radial-gradient(90% 120% at 0% 0%,#F2A27A 0%,transparent 60%),radial-
 .foot{color:var(--muted);font-size:13px;margin-top:20px;text-align:center}
 </style></head><body><div id=flash></div><div id=toast></div><div class=wrap>
 <header><div class=logo><i></i>EqualEd</div><span class=cls id=cls>Teacher</span><span class=live id=live><b></b><span>connecting</span></span><span class=sp></span>
-<button class=primary id=enable>Turn on alert sound</button></header>
+</header>
 <div class=summary><div class=sum><div class=n id=n1>–</div><div class=t>students</div></div><div class=sum><div class=n id=n2>0</div><div class=t>need you now</div></div>
 <div class=sum><div class=n id=n3>0</div><div class=t>interventions today</div></div><div class=sum><div class=n id=n4>–</div><div class=t>with an IEP or 504 plan</div></div></div>
 <div class=main>
@@ -96,7 +96,7 @@ background:radial-gradient(90% 120% at 0% 0%,#F2A27A 0%,transparent 60%),radial-
 </div>
 <p class=foot>No video is shown or stored here. EqualEd only tells you when a student needs you, and which of their accommodations to use.</p></div>
 <script>
-const $=id=>document.getElementById(id);let ctx=null,seen=new Set(),first=true,tmr=null,C=null,SEL=null,ALERTS=[];
+const $=id=>document.getElementById(id);let seen=new Set(),first=true,tmr=null,C=null,SEL=null,ALERTS=[];
 const INTERVENE=new Set(['overload','hectic','dwell']);
 const I={sound:'<path d="M3 14v-2a9 9 0 0118 0v2"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/>',
 door:'<path d="M5 21V4a1 1 0 011-1h9l4 2v16"/><path d="M3 21h18"/><circle cx="13" cy="12" r="1"/>',seat:'<path d="M6 11V5a2 2 0 012-2h8a2 2 0 012 2v6"/><path d="M4 11h16v4H4z"/><path d="M6 15v6M18 15v6"/>',
@@ -108,9 +108,8 @@ function icon(t){t=t.toLowerCase();const k=/headphone|noise/.test(t)?'sound':/br
 return `<svg width=22 height=22 viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=1.8 stroke-linecap=round stroke-linejoin=round>${I[k]}</svg>`}
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function ini(n){return n.split(/[ .]+/).filter(Boolean).map(w=>w[0]).join('').slice(0,2).toUpperCase()}
-$('enable').onclick=async e=>{ctx=new (window.AudioContext||window.webkitAudioContext)();if(window.isSecureContext&&'Notification' in window){try{await Notification.requestPermission()}catch(_){}}e.target.textContent='Alerts on';e.target.classList.remove('primary')};
-function chime(){if(!ctx)return;[[523.25,0],[659.25,.28]].forEach(([f,dt])=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=f;const t=ctx.currentTime+dt;
-g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.14,t+.04);g.gain.exponentialRampToValueAtTime(.0001,t+1.4);o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+1.5)});if(navigator.vibrate)navigator.vibrate([120])}
+
+function chime(){}  // silent on purpose: alerts are visual only
 const PLAY=[
  {when:s=>s.overload||s.reactions.length,title:'Go to them calmly now',text:'Offer the break pass and headphones. Speak quietly, give space, no touch.',acc:['break pass','headphones','touch']},
  {when:s=>has(s,['dwell','too_close','crowd'])||s.busy>=55,title:'Give them space',text:'Ask nearby students to step back or return to their seats.',acc:['seating']},
@@ -143,7 +142,7 @@ function render(){if(!C)return;const ss=C.students;$('cls').textContent=C.class_
   <div class=label style="margin-top:14px">${esc(s.plan||'')} accommodations</div><div class=accs>${(s.accommodations||[]).map(a=>`<div class="acc ${on(a)?'on':''}">${icon(a)}<span>${esc(a)}</span></div>`).join('')}</div>`;}
 function head(x){return {hectic:'Very busy around them',dwell:'Someone staying close',overload:'Signs of overload'}[x.kind]||'Needs you'}
 function toast(x){const t=$('toast');t.className='show';t.innerHTML=`<b>${esc(x.student)} needs you</b>${esc(x.reason)}`;$('flash').className='on';setTimeout(()=>$('flash').className='',1500);
- clearTimeout(tmr);tmr=setTimeout(()=>t.className='',9000);chime();if(window.isSecureContext&&window.Notification&&Notification.permission==='granted'){try{new Notification('EqualEd: '+x.student+' needs you',{body:x.reason})}catch(_){}}}
+ clearTimeout(tmr);tmr=setTimeout(()=>t.className='',9000);chime();}
 async function ack(id){await fetch('ack?id='+id,{method:'POST'});loadAlerts()}
 async function loadAlerts(){try{const a=(await (await fetch('alerts.json',{cache:'no-store'})).json()).filter(x=>INTERVENE.has(x.kind));
  const fresh=a.filter(x=>!seen.has(x.id));fresh.forEach(x=>seen.add(x.id));if(!first&&fresh.length)toast(fresh[fresh.length-1]);first=false;$('n3').textContent=a.length;
