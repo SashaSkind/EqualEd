@@ -1,0 +1,11 @@
+ultralytics==8.4.171
+opencv-python==5.0.0.93
+numpy==2.4.6
+torch==2.14.1
+lap==0.5.13
+sounddevice==0.5.6
+faster-whisper==1.2.1
+ai-edge-litert==2.2.0
+anthropic==1.11.0
+pyobjc-framework-AVFoundation==12.2.2
+pyobjc-framework-Cocoa==12.2.2
