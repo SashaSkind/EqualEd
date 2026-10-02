@@ -10,6 +10,9 @@ from professor import PAGE as PROFESSOR_PAGE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("EQUALED_PORT", "8765"))
+BUILD = str(int(time.time()))          # changes every time EqualEd starts: open pages reload themselves
+RELOADER = ("<script>(async()=>{let b=null;setInterval(async()=>{try{const r=await fetch('build.json',{cache:'no-store'});"
+            "const j=await r.json();if(b&&j.build!==b)location.reload();b=j.build}catch(e){}},4000)})()</script>")
 
 
 def lan_ip():
@@ -150,7 +153,9 @@ class Server:
             def do_GET(self):
                 p = self.path.split("?")[0]
                 if p in (pbase, pbase.rstrip("/")):
-                    return self._send(200, PROFESSOR_PAGE)
+                    return self._send(200, PROFESSOR_PAGE.replace("</body>", RELOADER + "</body>"))
+                if p in (pbase + "build.json", sbase + "build.json"):
+                    return self._json({"build": BUILD})
                 if p == pbase + "student.json":
                     return self._send(200, srv_self.teacher_view(), "application/json")
                 if p == pbase + "class.json":
@@ -159,9 +164,9 @@ class Server:
                     with srv_self.lock:
                         return self._json(srv_self.alerts)
                 if p in (sbase, sbase.rstrip("/")):
-                    return self._send(200, STUDENT_PAGE)
+                    return self._send(200, STUDENT_PAGE.replace("</body>", RELOADER + "</body>"))
                 if p == sbase + "app":
-                    return self._send(200, APP_SHELL.replace("__TEACHER__", pbase).replace("__STUDENT__", sbase))
+                    return self._send(200, APP_SHELL.replace("__TEACHER__", pbase).replace("__STUDENT__", sbase).replace("</body>", RELOADER + "</body>"))
                 if p == sbase + "live.mjpg":
                     return self._mjpeg()
                 if p == sbase + "state.json":
