@@ -41,6 +41,7 @@ class Server:
         ip = lan_ip()
         self.prof_url = f"http://{ip}:{PORT}/p/{self.ptoken}/"
         self.student_url = f"http://{ip}:{PORT}/s/{self.stoken}/"
+        self.app_url = f"http://{ip}:{PORT}/s/{self.stoken}/app"
         self._serve()
 
     # professor alerts ------------------------------------------------------
@@ -129,6 +130,23 @@ class Server:
                 except Exception:
                     return {}
 
+            def _mjpeg(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                last = None
+                try:
+                    while True:
+                        jpg = getattr(srv_self.bridge, "latest_jpeg", None)
+                        if jpg is not None and jpg is not last:
+                            self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
+                                             str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
+                            last = jpg
+                        time.sleep(0.05)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
+
             def do_GET(self):
                 p = self.path.split("?")[0]
                 if p in (pbase, pbase.rstrip("/")):
@@ -142,6 +160,10 @@ class Server:
                         return self._json(srv_self.alerts)
                 if p in (sbase, sbase.rstrip("/")):
                     return self._send(200, STUDENT_PAGE)
+                if p == sbase + "app":
+                    return self._send(200, APP_SHELL.replace("__TEACHER__", pbase).replace("__STUDENT__", sbase))
+                if p == sbase + "live.mjpg":
+                    return self._mjpeg()
                 if p == sbase + "state.json":
                     return self._send(200, srv_self.bridge.state_json(), "application/json")
                 self._send(404, "not found")
@@ -382,4 +404,49 @@ function render(){if(!S)return;$('who').textContent=S.student;
 }
 async function load(){try{const r=await fetch('state.json',{cache:'no-store'});S=await r.json();render();}catch(e){}}
 renderParas();load();setInterval(load,700);
+</script></body></html>"""
+
+
+APP_SHELL = """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>EqualEd</title><link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;700;800&family=Rubik:wght@600;700&display=swap" rel=stylesheet>
+<style>
+:root{--bg:#F4F2ED;--card:#FFFFFF;--ink:#14213D;--muted:#717C8B;--line:#E3E1DA;--accent:#13756C;--accent-bg:#DDF1EC;--alert:#B42D27}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0E1420;--card:#172131;--ink:#EAF0F7;--muted:#8D99AB;--line:#26324A;--accent:#5CC9B8;--accent-bg:#14373A;--alert:#FF7A70}}
+:root[data-theme=dark]{--bg:#0E1420;--card:#172131;--ink:#EAF0F7;--muted:#8D99AB;--line:#26324A;--accent:#5CC9B8;--accent-bg:#14373A;--alert:#FF7A70}
+*{box-sizing:border-box}html,body{margin:0;height:100%}body{background:var(--bg);color:var(--ink);font:15px/1.4 'Nunito Sans',-apple-system,system-ui,sans-serif;display:flex;flex-direction:column}
+nav{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--card)}
+.logo{display:flex;align-items:center;gap:8px;font:700 18px Rubik;margin-right:14px}.logo i{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#36C2B4,#3B5BDB)}
+nav button{font:700 14px 'Nunito Sans';border:0;background:none;color:var(--muted);padding:8px 14px;border-radius:9px;cursor:pointer}
+nav button.on{background:var(--accent-bg);color:var(--accent)}.sp{flex:1}.hint{font-size:12px;color:var(--muted)}
+main{flex:1;position:relative}iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:none;background:var(--bg)}iframe.on{display:block}
+#live{position:absolute;inset:0;display:none;padding:16px;gap:16px}#live.on{display:flex}
+.view{flex:1;display:flex;align-items:center;justify-content:center;background:#0B0F17;border-radius:16px;overflow:hidden;min-width:0}
+.view img{max-width:100%;max-height:100%;object-fit:contain}
+.side{width:260px;display:flex;flex-direction:column;gap:10px}.side h3{font:700 13px 'Nunito Sans';text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:6px 0 2px}
+.side button{font:700 14px 'Nunito Sans';text-align:left;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:12px 14px;cursor:pointer}
+.side button.warn{border-color:var(--alert);color:var(--alert)}.side p{font-size:13px;color:var(--muted);margin:0}
+@media (max-width:800px){#live.on{flex-direction:column}.side{width:auto}}
+</style></head><body>
+<nav><div class=logo><i></i>EqualEd</div>
+<button data-p=teacher class=on>Teacher</button><button data-p=live>Live view</button><button data-p=student>Student</button>
+<span class=sp></span><span class=hint>Live view stays on this device</span></nav>
+<main>
+<iframe id=teacher class=on src="__TEACHER__" title="Teacher dashboard"></iframe>
+<div id=live><div class=view><img id=feed alt="EqualEd live camera view with triggers drawn on it"></div>
+ <div class=side><h3>Student</h3>
+  <button onclick="cmd('lock')">Lock onto the student</button><button onclick="cmd('auto')">Unlock</button>
+  <p>Or raise both hands for 1 second in front of the camera.</p>
+  <h3>Demo</h3><button class=warn onclick="cmd('overload')">Simulate overload</button>
+  <button onclick="cmd('stop')">Stop calming sound</button><button onclick="cmd('lean')">Simulate lean-in (reading)</button></div></div>
+<iframe id=student src="__STUDENT__" title="Student dashboard"></iframe>
+</main><script>
+const feed=document.getElementById('feed');
+function show(p){document.querySelectorAll('nav button[data-p]').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
+ ['teacher','student'].forEach(id=>document.getElementById(id).classList.toggle('on',id===p));
+ document.getElementById('live').classList.toggle('on',p==='live');
+ if(p==='live'){if(!feed.src)feed.src='live.mjpg?'+Date.now()}else{feed.removeAttribute('src')}
+ try{localStorage.setItem('eq_tab',p)}catch(e){}}
+document.querySelectorAll('nav button[data-p]').forEach(b=>b.onclick=()=>show(b.dataset.p));
+async function cmd(what){await fetch('simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({what})})}
+let start='teacher';try{start=localStorage.getItem('eq_tab')||'teacher'}catch(e){}show(start);
 </script></body></html>"""

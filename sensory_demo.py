@@ -552,6 +552,10 @@ class Demo:
                 self.calm.stop()
             elif kind == "simulate" and a == "lean":
                 self.lean_count += 1
+            elif kind == "simulate" and a == "auto":
+                self.mode = "auto"
+            elif kind == "simulate" and a == "lock":
+                self.lock_request = True
 
         self.cosmos.push(now, frame)
 
@@ -611,6 +615,14 @@ class Demo:
                     self.log_event("locked", "lock", f"Now tracking {self.cfg.get('student_name', 'the student')} (hands-up gesture)", None)
             else:
                 tr.hands_up_since = None
+        if getattr(self, "lock_request", False):
+            self.lock_request = False
+            pick = next((p for p in people if p[0] == self.target_id), None) or (
+                max(people, key=lambda p: bw(p[1]) * bh(p[1])) if people else None)
+            if pick is not None:
+                self.mode, self.target_id, self.locked_box = "locked", pick[0], pick[1].copy()
+                self.seat, self.locked_lost_at, self.lock_flash = (center(pick[1]), bh(pick[1])), None, now
+                self.log_event("locked", "lock", f"Now tracking {self.cfg.get('student_name', 'the student')} (button)", None)
         if self.mode == "locked":
             # The student is anchored to their SEAT (where they raised their hands), not to whoever
             # is nearest the last box, so people walking in front can't steal the lock.
@@ -1232,6 +1244,16 @@ def probe_cameras():
     return [f[0] for f in found], best[2], best[0]
 
 
+def open_app_window(url):
+    """Open EqualEd's web app as its own window (Chrome app mode: no tabs, no address bar)."""
+    import subprocess
+    chrome = "/Applications/Google Chrome.app"
+    if os.path.exists(chrome):
+        subprocess.Popen(["open", "-na", chrome, "--args", f"--app={url}", "--window-size=1440,920"])
+    else:
+        subprocess.Popen(["open", url])
+
+
 def selftest():
     demo = Demo(event_dir="events_selftest", use_audio=False)
     demo.profile, demo.profile_path = {}, os.path.join("events_selftest", "profile.json")
@@ -1283,11 +1305,8 @@ def main():
     log("microphone permission:", "granted" if mic_ok else "denied")
     demo = Demo(use_audio=mic_ok)
     log("student dashboard:", demo.server.student_url)
-    if cfg.get("open_dashboard", True) and demo.server.prof_url.startswith("http"):
-        import subprocess
-        subprocess.Popen(["open", demo.server.prof_url])        # teacher dashboard
-        if cfg.get("open_student_dashboard", False):
-            subprocess.Popen(["open", demo.server.student_url])
+    if cfg.get("open_dashboard", True) and demo.server.app_url.startswith("http"):
+        open_app_window(demo.server.app_url)
     log("professor page:", demo.server.prof_url)
     cv2.namedWindow(WIN, cv2.WINDOW_AUTOSIZE)
     raise_window(WIN)
@@ -1326,6 +1345,10 @@ def main():
         demo.fps = 0.9 * demo.fps + 0.1 * fps
         put(canvas, f"{demo.fps:.0f} FPS", (FRAME_W - 80, 20), 0.5, (0, 255, 0), 1)
         cv2.imshow(WIN, canvas)
+        if demo.frame_i % 2 == 0:                 # ~10 fps for the app's Live view
+            ok_j, jpg = cv2.imencode(".jpg", canvas, [cv2.IMWRITE_JPEG_QUALITY, 72])
+            if ok_j:
+                demo.latest_jpeg = jpg.tobytes()
         if writer is not None:
             writer.write(canvas)
         key = cv2.waitKey(1) & 0xFF
