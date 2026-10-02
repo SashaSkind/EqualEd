@@ -13,37 +13,54 @@ PORT = 8765
 PAGE = """<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>EqualEd alerts</title><style>
-:root{--bg:#0f1115;--card:#1b1f27;--text:#e9edf3;--muted:#98a2b3;--red:#e5484d;--green:#30a46c}
+:root{--bg:#0f1115;--card:#1b1f27;--text:#e9edf3;--muted:#98a2b3;--red:#e5484d;--orange:#f59e0b;--green:#30a46c}
 body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,system-ui,sans-serif}
-main{max-width:640px;margin:0 auto;padding:20px 16px}
-h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 18px}
+main{max-width:680px;margin:0 auto;padding:20px 16px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 14px}
 button{font:inherit;border:0;border-radius:10px;padding:10px 16px;cursor:pointer}
 #enable{background:#2b3240;color:var(--text);width:100%;margin-bottom:16px}
 .card{background:var(--card);border-left:6px solid var(--red);border-radius:12px;padding:14px 16px;margin-bottom:12px}
-.card.ack{border-color:var(--green);opacity:.7}
+.card.trigger{border-color:var(--orange)}.card.ack{border-color:var(--green);opacity:.65}
 .who{font-weight:700;font-size:18px}.time{color:var(--muted);font-size:14px}
 .why{margin:8px 0}.ackbtn{background:var(--red);color:#fff}.done{color:var(--green);font-weight:600}
+.tag{font-size:12px;padding:2px 8px;border-radius:999px;background:#2b3240;color:var(--muted);margin-left:6px}
 .empty{color:var(--muted);text-align:center;padding:40px 0}
-</style></head><body><main>
+#toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-140%);transition:transform .35s;z-index:9;
+ width:min(92vw,620px);background:var(--red);color:#fff;border-radius:14px;padding:16px 18px;box-shadow:0 10px 40px #0009}
+#toast.show{transform:translate(-50%,0)}#toast.trigger{background:#b45309}#toast b{font-size:19px;display:block;margin-bottom:4px}
+#flash{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 0 0 var(--red);transition:box-shadow .3s}
+#flash.on{box-shadow:inset 0 0 0 10px var(--red)}
+</style></head><body><div id=flash></div><div id=toast></div><main>
 <h1>EqualEd · classroom alerts</h1><p class=sub>Live from the student's device. Nothing leaves this Wi-Fi.</p>
-<button id=enable>Tap once to turn on alert sound</button>
+<button id=enable>Tap once to turn on alert sound and pop-ups</button>
 <div id=list><p class=empty>No alerts yet.</p></div></main><script>
-let ctx=null, seen=new Set(), first=true;
-document.getElementById('enable').onclick=e=>{ctx=new (window.AudioContext||window.webkitAudioContext)();e.target.textContent='Alert sound on';};
-function chime(){if(!ctx)return;[660,880].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;
-g.gain.setValueAtTime(0.0001,ctx.currentTime+i*.25);g.gain.exponentialRampToValueAtTime(.3,ctx.currentTime+i*.25+.03);
-g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+i*.25+.6);o.connect(g).connect(ctx.destination);o.start(ctx.currentTime+i*.25);o.stop(ctx.currentTime+i*.25+.7);});
-if(navigator.vibrate)navigator.vibrate([200,100,200]);}
-async function ack(id){await fetch('ack?id='+id,{method:'POST'});load();}
+let ctx=null, seen=new Set(), first=true, tmr=null;
+const KIND={hectic:'needs help: very busy around them',dwell:'someone is staying close to them',overload:'may be overwhelmed',trigger:'sensory trigger'};
+document.getElementById('enable').onclick=async e=>{ctx=new (window.AudioContext||window.webkitAudioContext)();
+ if(window.isSecureContext&&'Notification' in window){try{await Notification.requestPermission();}catch(_){}}
+ e.target.textContent='Alerts on: sound + pop-ups'+(window.isSecureContext&&window.Notification&&Notification.permission==='granted'?' + system notifications':'');};
+function chime(urgent){if(!ctx)return;(urgent?[880,660,880]:[660]).forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;
+g.gain.setValueAtTime(0.0001,ctx.currentTime+i*.22);g.gain.exponentialRampToValueAtTime(.3,ctx.currentTime+i*.22+.03);
+g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+i*.22+.5);o.connect(g).connect(ctx.destination);o.start(ctx.currentTime+i*.22);o.stop(ctx.currentTime+i*.22+.6);});
+if(navigator.vibrate)navigator.vibrate(urgent?[300,100,300]:[150]);}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function popup(x){const t=document.getElementById('toast'),urgent=x.kind!=='trigger';
+ t.className=(urgent?'':'trigger')+' show';t.innerHTML=`<b>${esc(x.student)}: ${esc(KIND[x.kind]||'alert')}</b>${esc(x.reason)}`;
+ const f=document.getElementById('flash');if(urgent){f.className='on';setTimeout(()=>f.className='',1500);}
+ clearTimeout(tmr);tmr=setTimeout(()=>t.className=t.className.replace(' show',''),urgent?9000:5000);chime(urgent);
+ if(window.isSecureContext&&window.Notification&&Notification.permission==='granted'){try{new Notification('EqualEd: '+x.student,{body:x.reason});}catch(_){}}}
+async function ack(id){await fetch('ack?id='+id,{method:'POST'});load();}
 async function load(){try{const r=await fetch('alerts.json',{cache:'no-store'});const a=await r.json();
-let fresh=false;a.forEach(x=>{if(!seen.has(x.id)){seen.add(x.id);if(!first)fresh=true;}});first=false;if(fresh)chime();
-const L=document.getElementById('list');if(!a.length){L.innerHTML='<p class=empty>No alerts yet.</p>';return;}
-L.innerHTML=a.slice().reverse().map(x=>`<div class="card ${x.ack?'ack':''}"><div class=who>${esc(x.student)} ${x.kind=='hectic'?'needs help: very busy around them':'may be overwhelmed'}</div>
-<div class=time>${esc(x.time)}</div><div class=why>${esc(x.reason)}</div>
-${x.triggers.length?`<div class=time>Just before: ${esc(x.triggers.join(', '))}</div>`:''}
-${x.cosmos?`<div class=why><b>NVIDIA Cosmos:</b> ${esc(x.cosmos)}</div>`:''}
-<div class=time>${esc(x.sound)}</div><div style="margin-top:10px">${x.ack?'<span class=done>Acknowledged</span>':`<button class=ackbtn onclick="ack(${x.id})">I'm on my way</button>`}</div></div>`).join('');}catch(e){}}
+ const fresh=a.filter(x=>!seen.has(x.id));fresh.forEach(x=>seen.add(x.id));
+ if(!first&&fresh.length){const pick=fresh.find(x=>x.kind!=='trigger')||fresh[fresh.length-1];popup(pick);}first=false;
+ const L=document.getElementById('list');if(!a.length){L.innerHTML='<p class=empty>No alerts yet.</p>';return;}
+ L.innerHTML=a.slice().reverse().map(x=>`<div class="card ${x.kind==='trigger'?'trigger':''} ${x.ack?'ack':''}">
+ <div class=who>${esc(x.student)} ${esc(KIND[x.kind]||'')}<span class=tag>${esc(x.kind||'alert')}</span></div>
+ <div class=time>${esc(x.time)}</div><div class=why>${esc(x.reason)}</div>
+ ${x.triggers&&x.triggers.length?`<div class=time>Details: ${esc(x.triggers.join(', '))}</div>`:''}
+ ${x.cosmos?`<div class=why><b>NVIDIA Cosmos:</b> ${esc(x.cosmos)}</div>`:''}
+ ${x.sound?`<div class=time>${esc(x.sound)}</div>`:''}
+ <div style="margin-top:10px">${x.ack?'<span class=done>Acknowledged</span>':`<button class=ackbtn onclick="ack(${x.id})">I'm on my way</button>`}</div></div>`).join('');}catch(e){}}
 load();setInterval(load,1000);
 </script></body></html>"""
 

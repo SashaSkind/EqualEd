@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from professor import PAGE as PROFESSOR_PAGE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PORT = 8765
+PORT = int(os.environ.get("EQUALED_PORT", "8765"))
 
 
 def lan_ip():
@@ -205,7 +205,7 @@ textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:v
  <div class=card><h2>Overload support</h2><div id=over class=muted>No overload moments yet</div>
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="b" onclick="post('simulate',{what:'overload'})">Simulate overload</button>
   <button class="b" onclick="post('simulate',{what:'stop'})">Stop calming sound</button></div></div>
- <div class=card><h2>10 sensory triggers</h2><div id=trigs></div></div>
+ <div class=card><h2>Sensory triggers</h2><div id=trigs></div></div>
  <div class=card><h2>Student reactions</h2><div id=reacts></div></div>
  <div class=card style="grid-column:1/-1"><h2>Recent moments: tell it what bothered you</h2><div id=events class=muted>Nothing yet.</div></div>
 </div></section>
@@ -306,7 +306,7 @@ function render(){if(!S)return;$('who').textContent=S.student;
  const db=S.mic.db;$('db').textContent=S.mic.ok?Math.round(db)+' dB':'--';const dbp=Math.max(0,Math.min(100,(db+70)*1.6));$('dbBar').style.width=dbp+'%';$('dbBar').style.background=color(dbp);
  $('snd').textContent=S.mic.label?('Hearing: '+S.mic.label):'';
  const HC=S.hectic;$('hv').textContent=HC.value+' / 100';$('hb').style.width=HC.value+'%';$('hb').style.background=color(HC.value);
- $('hw').textContent=HC.locked?(HC.lost?'Looking for '+HC.name+'... raise both hands to re-lock.':'Locked on '+HC.name+'. '+(HC.parts.length?'Now: '+HC.parts.join(', '):'Calm around them.')+' Teacher is alerted at 60 for 4 s.'):'Raise both hands in front of the camera for 1 second to lock onto a student.';
+ $('hw').textContent=HC.locked?(HC.lost?'Looking for '+HC.name+'... raise both hands to re-lock.':'Locked on '+HC.name+'. '+(HC.parts.length?'Now: '+HC.parts.join(', '):'Calm around them.')+' Teacher is alerted at 55 for 3 of 5 s.'):'Raise both hands in front of the camera for 1 second to lock onto a student.';
  const C=S.vast.cosmos;$('cz').innerHTML=!S.vast.gpu?'Paste your team GPU key into <b>vast.env</b> to turn on live reasoning by NVIDIA Cosmos3-Reason.'
   :C?`<div class=big style="font-size:22px">${esc(C.what||'nothing risky')}</div><div class=meter><div style="width:${Math.round(C.risk*100)}%;background:${color(C.risk*100)}"></div></div>
    <div>${esc(C.why)}</div><div class="small muted">risk ${Math.round(C.risk*100)}% · answered in ${C.latency}s · ${S.vast.cosmos_calls} reads · ${S.vast.cosmos_video?'video':'still frames'}</div>`

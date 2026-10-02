@@ -53,9 +53,12 @@ KP_OK = 0.5
 WIN = "EqualEd - classroom support (q to quit)"
 EPISODE_COOLDOWN = 60.0         # seconds before another overload alert
 LOCK_HOLD = 1.0                 # seconds with both hands up to lock onto a student
-HECTIC_ALERT_AT = 60            # "busy around the student" level (0-100) that alerts the teacher
-HECTIC_HOLD = 4.0               # ... if it stays that high this many seconds
+HECTIC_ALERT_AT = 55            # "busy around the student" level (0-100) that alerts the teacher
+HECTIC_HOLD = 3.0               # ... if it is that high for this many of the last HECTIC_WINDOW seconds
+HECTIC_WINDOW = 5.0             # (brief dips, e.g. someone blocking the view, don't reset it)
 HECTIC_COOLDOWN = 60.0
+DWELL_ALERT = 8.0               # someone inside the student's bubble this long -> teacher alert
+TEACHER_TRIGGER_COOLDOWN = 30.0 # per trigger, so the teacher isn't spammed
 PREARM_AT = 0.6                 # risk level that starts the calming sound early
 PREARM_COOLDOWN = 20.0
 PREDICTION_WINDOW = 15.0        # a loud sound within this many seconds counts as "predicted"
@@ -95,6 +98,7 @@ TRIGGER_DEFS = [
     ("chair", "Chair moved or tucked in", True, 0.0),
     ("light", "Flicker or sudden light change", True, 0.0),
     ("noise", "Sudden loud noise", True, 0.0),
+    ("dwell", "Someone staying close", True, 0.0),
 ]
 RESPONSE_DEFS = [
     ("ears", "Covering ears", 0.4),
@@ -179,6 +183,7 @@ class Track:
         self.last_stand = -1e9
         self.seen = 0.0
         self.hands_up_since = None
+        self.near_since = None
 
 
 def kp_speed(tr, now, dt=0.3):
@@ -354,6 +359,9 @@ class Demo:
         self.locked_box, self.locked_lost_at, self.lock_flash = None, None, -1e9
         self.hectic, self.hectic_since, self.hectic_alert_at, self.hectic_parts = 0.0, None, -1e9, []
         self.ring_motion = 0.0
+        self.hectic_hist = collections.deque(maxlen=400)   # (t, above line?)
+        self.teacher_sent = {}          # trigger key -> last time the teacher was told
+        self.marks = []                 # (box, text, color) drawn on the people causing triggers
         self.requested_source, self.source_label = None, "webcam"
         self._state = "{}"
         self.last_publish = 0.0
@@ -508,8 +516,19 @@ class Demo:
         people = []
         if res.boxes is not None and len(res.boxes):
             boxes = res.boxes.xyxy.cpu().numpy()
-            ids = (res.boxes.id.cpu().numpy().astype(int) if res.boxes.id is not None
-                   else np.arange(len(boxes)) + 100000)
+            if res.boxes.id is not None:
+                ids = res.boxes.id.cpu().numpy().astype(int)
+            else:   # tracker gave no ids this frame: reuse the track each box overlaps most
+                ids, used = [], set()
+                for bb in boxes:
+                    best = max(((iou(bb, tr.hist[-1][3]), tid) for tid, tr in self.tracks.items()
+                                if tid not in used and tr.hist and now - tr.seen < 1.0), default=(0, None))
+                    if best[0] > 0.3:
+                        ids.append(best[1]); used.add(best[1])
+                    else:
+                        self.next_free_id = getattr(self, "next_free_id", 500000) + 1
+                        ids.append(self.next_free_id)
+                ids = np.array(ids)
             kxy = res.keypoints.xy.cpu().numpy()
             kc = (res.keypoints.conf.cpu().numpy() if res.keypoints.conf is not None
                   else np.ones(kxy.shape[:2]))
@@ -543,23 +562,33 @@ class Demo:
                 tr.hands_up_since = tr.hands_up_since or now
                 if now - tr.hands_up_since >= LOCK_HOLD and not (self.mode == "locked" and self.target_id == tid):
                     self.mode, self.target_id, self.locked_box = "locked", tid, b.copy()
+                    self.seat = (center(b), bh(b))
                     self.locked_lost_at, self.lock_flash = None, now
                     self.log_event("locked", "lock", f"Now tracking {self.cfg.get('student_name', 'the student')} (hands-up gesture)", None)
             else:
                 tr.hands_up_since = None
         if self.mode == "locked":
-            ids_now = {p[0] for p in people}
-            if self.target_id in ids_now:
-                self.locked_box = next(p[1] for p in people if p[0] == self.target_id).copy()
-                self.locked_lost_at = None
-            elif self.locked_box is not None:
-                # lost (someone walked in front, tracker reset): re-find the person in the same spot
+            # The student is anchored to their SEAT (where they raised their hands), not to whoever
+            # is nearest the last box, so people walking in front can't steal the lock.
+            if getattr(self, "seat", None) is None and self.locked_box is not None:
+                self.seat = (center(self.locked_box), bh(self.locked_box))
+            sc, sh = self.seat
+            def seat_dist(p):
+                return np.linalg.norm(center(p[1]) - sc) / sh + abs(np.log(bh(p[1]) / sh))
+            in_seat = [p for p in people if seat_dist(p) < 0.45]
+            cur = next((p for p in people if p[0] == self.target_id), None)
+            best = min(in_seat, key=seat_dist) if in_seat else None
+            if cur is not None and seat_dist(cur) < 0.45 and (best is None or seat_dist(cur) <= seat_dist(best) + 0.1):
+                pick = cur
+            else:
+                pick = best
+            if pick is not None:
+                self.target_id, self.locked_box, self.locked_lost_at = pick[0], pick[1].copy(), None
+                # follow small shifts in posture slowly (leaning, sitting back)
+                self.seat = (0.97 * sc + 0.03 * center(pick[1]), 0.97 * sh + 0.03 * bh(pick[1]))
+            else:
+                self.target_id = None if cur is None or seat_dist(cur) >= 0.45 else self.target_id
                 self.locked_lost_at = self.locked_lost_at or now
-                lb, lh = self.locked_box, bh(self.locked_box)
-                cands = [p for p in people if np.linalg.norm(center(p[1]) - center(lb)) < 0.6 * lh and 0.6 < bh(p[1]) / lh < 1.6]
-                if cands:
-                    self.target_id = min(cands, key=lambda p: np.linalg.norm(center(p[1]) - center(lb)))[0]
-                    self.locked_box, self.locked_lost_at = next(p[1] for p in cands if p[0] == self.target_id).copy(), None
         if self.mode == "pick" and self.target_id not in self.tracks:
             self.mode = "auto"
         if self.mode == "auto":
@@ -598,6 +627,31 @@ class Demo:
             if self.check_stand(tr, k, c, b, now, H) and tid in vicinity:
                 stood_now.append(tid)
                 self.stand_events.append((now, tid))
+
+        # 3b) who is causing what, and how long anyone has stayed close
+        self.marks, dwellers = [], []
+        for tid, b, k, c, tr in others:
+            if tid in near:
+                tr.near_since = tr.near_since or now
+                stay = now - tr.near_since
+                if stay >= DWELL_ALERT:
+                    dwellers.append((tid, stay))
+            else:
+                tr.near_since = None
+            tags = []
+            if tid in too_close:
+                tags.append("TOO CLOSE")
+            if speeds.get(tid, 0) > 1.5 and tid in vicinity:
+                tags.append("FAST")
+            if grows.get(tid, 0) > 0.6 and tid in vicinity:
+                tags.append("APPROACHING")
+            if tr.near_since and now - tr.near_since >= 3:
+                tags.append(f"STAYING CLOSE {now - tr.near_since:.0f}s")
+            if not tags and tid in near:
+                tags.append("close")
+            if tags:
+                self.marks.append((b, " | ".join(tags), (0, 0, 255) if tags != ["close"] else (0, 165, 255)))
+        longest = max((s for _, s in dwellers), default=0.0)
 
         # 4) whole-scene motion and light
         small = cv2.GaussianBlur(cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (160, 90)), (5, 5), 0)
@@ -661,6 +715,8 @@ class Demo:
             "rush": (len(stood_now) > 0 and len(recent_standers) >= 2, f"people up in 6s: {len(recent_standers)}"),
             "chair": (len(moved) > 0, f"chairs seen: {len(self.chair_boxes)}"),
             "light": (sudden or flicker, f"brightness: {raw_mean:.0f}"),
+            "dwell": (len(dwellers) > 0, f"longest stay close: {longest:.0f}s (alert at {DWELL_ALERT:.0f}s)" if longest
+                      else f"nobody lingering (alert at {DWELL_ALERT:.0f}s)"),
             "noise": (noise, (noise_desc or f"{self.audio.db:.0f} dB, {self.audio.label or 'quiet'}") if self.audio.ok
                       else "microphone off"),
         }
@@ -672,29 +728,33 @@ class Demo:
                     self.on_loud_sound(now, noise_desc, frame)
                 else:
                     self.log_event("trigger", key, t.label, frame, {"detail": val}, pkey=key, detail=val)
+                self.tell_teacher(key, t.label, val if key != "noise" else noise_desc, now)
 
         # 6b) "busy around the student" meter (no sound in it): people, movement and approaches
         #     inside the student's personal bubble only
         if target is not None:
-            movers_near = sum(1 for t in near if speeds.get(t, 0) > 0.6)
-            hp = [(min(1.0, len(near) / 3) * 35, f"{len(near)} people close"),
-                  (min(1.0, movers_near / 2) * 25, f"{movers_near} moving near"),
-                  (15 if fastest_grow > 0.6 else 0, "someone approaching fast"),
+            movers_near = sum(1 for t in vicinity if speeds.get(t, 0) > 0.6)
+            hp = [(min(1.0, len(near) / 3) * 30, f"{len(near)} people close"),
+                  (min(1.0, movers_near / 2) * 25, f"{movers_near} moving around"),
+                  (min(1.0, self.ring_motion / 0.2) * 25, "lots of motion around"),
+                  (10 if fastest_grow > 0.6 else 0, "someone approaching fast"),
                   (10 if self.trig["rapid"].alerting(now) else 0, "rapid movement"),
-                  (min(1.0, self.ring_motion / 0.25) * 15, "lots of motion around"),
+                  (10 if self.trig["commotion"].alerting(now) else 0, "commotion"),
                   (10 if any(self.trig[k].alerting(now) for k in ("stand", "rush", "chair")) else 0, "people getting up / chairs"),
                   (10 if self.trig["too_close"].alerting(now) else 0, "someone in personal space")]
             raw_h = min(100.0, sum(v for v, _ in hp))
             self.hectic_parts = [n for v, n in sorted(hp, key=lambda x: -x[0]) if v > 0][:3]
+            if self.hectic_parts:
+                self.last_hectic_parts = self.hectic_parts
         else:
             raw_h, self.hectic_parts = 0.0, []
         self.hectic = 0.7 * self.hectic + 0.3 * raw_h if raw_h > self.hectic else 0.95 * self.hectic + 0.05 * raw_h
-        if self.hectic >= HECTIC_ALERT_AT:
-            self.hectic_since = self.hectic_since or now
-            if now - self.hectic_since >= HECTIC_HOLD and now - self.hectic_alert_at > HECTIC_COOLDOWN:
-                self.hectic_alert(now, frame)
-        else:
-            self.hectic_since = None
+        self.hectic_hist.append((now, self.hectic >= HECTIC_ALERT_AT))
+        recent_h = [(t, a) for t, a in self.hectic_hist if now - t <= HECTIC_WINDOW]
+        above = sum(t2 - t1 for (t1, a), (t2, _) in zip(recent_h, recent_h[1:]) if a)
+        self.hectic_since = now - above if above > 0 else None
+        if above >= HECTIC_HOLD and now - self.hectic_alert_at > HECTIC_COOLDOWN:
+            self.hectic_alert(now, frame)
 
         # 7) risk meter: what is likely to get loud or overwhelming in the next few seconds
         parts = []
@@ -839,12 +899,26 @@ class Demo:
         self.log_event("loud sound", "noise", label.capitalize(), frame, {"detail": desc}, pkey="sound:" + label,
                        plabel=label.capitalize() + " sound", detail=detail)
 
+    def tell_teacher(self, key, label, detail, now):
+        """On-screen notification for the teacher whenever a trigger fires (rate-limited per trigger)."""
+        if now - self.teacher_sent.get(key, -1e9) < TEACHER_TRIGGER_COOLDOWN:
+            return
+        self.teacher_sent[key] = now
+        name = self.cfg.get("student_name", "The student")
+        if key == "dwell":
+            msg, kind = f"Someone has stayed close to {name} for {DWELL_ALERT:.0f}+ seconds. Please check in.", "dwell"
+        elif key == "noise":
+            msg, kind = f"Sudden loud noise near {name}: {detail}", "trigger"
+        else:
+            msg, kind = f"{label} near {name}", "trigger"
+        self.server.notify(msg, [detail] if detail else [], "", kind=kind)
+
     def hectic_alert(self, now, frame):
         self.hectic_alert_at = now
         name = self.cfg.get("student_name", "The student")
         where = self.calm.play()
         sound = (f"Calming sound playing on {where}" if where else "Calming sound held back: no AirPods connected")
-        why = ", ".join(self.hectic_parts) or "a lot going on"
+        why = ", ".join(self.hectic_parts or getattr(self, "last_hectic_parts", [])) or "a lot going on"
         aid = self.server.notify(f"Very busy around {name}: {why}. Please check in.",
                                  sorted({lbl for t, lbl in self.recent if now - t <= 20}), sound, kind="hectic")
         self.episode = {"at": now, "id": aid, "where": where, "reason": f"Busy around {name}: {why}", "sound": sound}
@@ -965,6 +1039,15 @@ class Demo:
             if tid in too_close:
                 x1, y1, x2, y2 = map(int, b)
                 cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 0, 255), 4)
+        tc_ = tuple(map(int, center(target[1]))) if target is not None else None
+        for b, txt, col in self.marks:
+            bx1, by1, bx2, by2 = map(int, b)
+            cv2.rectangle(vis, (bx1, by1), (bx2, by2), col, 3)
+            (tw, th_), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            cv2.rectangle(vis, (bx1, max(by1 - th_ - 10, 0)), (bx1 + tw + 8, max(by1, th_ + 10)), col, -1)
+            put(vis, txt, (bx1 + 4, max(by1 - 6, th_ + 4)), 0.6, (255, 255, 255), 2)
+            if tc_ and col == (0, 0, 255):
+                cv2.line(vis, tc_, tuple(map(int, center(b))), col, 2)
         if target is not None:
             x1, y1, x2, y2 = map(int, target[1])
             hc = (0, 0, 230) if self.hectic >= HECTIC_ALERT_AT else (0, 150, 255) if self.hectic >= 35 else (0, 200, 0)
@@ -1001,9 +1084,9 @@ class Demo:
         strip = np.full((STRIP_H, W, 3), 32, np.uint8)
         cw = W // 3
         # column 1: triggers
-        put(strip, "10 SENSORY TRIGGERS", (12, 20), 0.5, (255, 255, 255), 1)
+        put(strip, "SENSORY TRIGGERS (red = teacher told)", (12, 20), 0.45, (255, 255, 255), 1)
         for i, t in enumerate(self.trig.values()):
-            y = 38 + i * 16
+            y = 36 + i * 15
             col = (90, 90, 90) if not t.live else (0, 0, 255) if t.alerting(now) else (0, 170, 0)
             cv2.circle(strip, (18, y - 4), 5, col, -1)
             put(strip, t.label + (f" x{t.count}" if t.count else ""), (30, y), 0.4)
