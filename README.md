@@ -4,6 +4,8 @@
 
 **One camera, one microphone, one set of models: classroom support for neurodivergent students.**
 
+> **Teammates: start with [TEAM_UPDATE.md](TEAM_UPDATE.md)** for everything built so far, what's tested, and what's left.
+
 EqualEd watches a classroom in real time and steps in when a student is struggling.
 Everything runs on the student's laptop. Video and audio never leave the device.
 

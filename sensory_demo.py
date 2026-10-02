@@ -802,29 +802,34 @@ class Demo:
         if close_enough:
             _, b, k, c, tr = subject
             sw = shoulder_w(k, c, b)
-            # Covering ears = a raised hand right at the side of the head, at ear height.
-            # Both hands counts at once; one hand only if it stays there 2.5 s
-            # (one hand near the head is usually scratching, leaning or adjusting glasses).
+            # Covering ears: a hand at the side of the head, roughly at ear height. Covering the ears
+            # hides the ear points, so ear positions are estimated from the eyes/nose when needed.
+            # Both hands -> counts right away; one hand -> only if it stays 2.5 s (scratching, glasses).
             hands = 0
-            ear_pts = [k[i] for i in (L_EAR, R_EAR) if c[i] > 0.4]
-            if not ear_pts and c[L_EYE] > 0.4 and c[R_EYE] > 0.4:     # ears hidden: estimate from the eyes
+            ear_pts = [k[i] for i in (L_EAR, R_EAR) if c[i] > 0.3]
+            if len(ear_pts) < 2 and c[L_EYE] > 0.3 and c[R_EYE] > 0.3:
                 mid = (k[L_EYE] + k[R_EYE]) / 2
-                half = 1.6 * (k[L_EYE] - k[R_EYE]) / 2
-                ear_pts = [mid + half, mid - half]
+                half = 1.7 * (k[L_EYE] - k[R_EYE]) / 2
+                ear_pts = [mid + half + [0, 0.15 * sw], mid - half + [0, 0.15 * sw]]
+            elif not ear_pts and c[NOSE] > 0.3:
+                ear_pts = [k[NOSE] + [0.55 * sw, 0], k[NOSE] - [0.55 * sw, 0]]
             sh_y = mean_pt(k, c, (L_SH, R_SH))
+            wrist_info = []
             for wr in (L_WR, R_WR):
-                if c[wr] > 0.5 and ear_pts and (sh_y is None or k[wr][1] < sh_y[1] - 0.2 * sw):
-                    if min(np.linalg.norm(k[wr] - e) for e in ear_pts) < 0.4 * sw:
-                        hands += 1
+                ok_w = c[wr] > 0.3 and ear_pts
+                dist = min(np.linalg.norm(k[wr] - e) for e in ear_pts) / sw if ok_w else None
+                raised = sh_y is None or k[wr][1] < sh_y[1] - 0.05 * sw
+                if ok_w and ((raised and dist < 0.75) or dist < 0.45):
+                    hands += 1
+                wrist_info.append({"conf": round(float(c[wr]), 2), "dist_to_ear": None if dist is None else round(float(dist), 2),
+                                   "raised": bool(raised)})
+            self.ear_debug = {"hands": hands, "wrists": wrist_info, "ears_seen": int(sum(c[i] > 0.3 for i in (L_EAR, R_EAR)))}
             if hands == 1:
                 self.one_hand_since = self.one_hand_since or now
             else:
                 self.one_hand_since = None
             ears = hands >= 2 or (hands == 1 and now - self.one_hand_since >= 2.5)
             resp_state["ears"] = (ears, f"hands at ears: {hands}")
-            self.ear_debug = {"hands": hands, "wrist_conf": [round(float(c[L_WR]), 2), round(float(c[R_WR]), 2)],
-                              "wrists": [k[L_WR].round().tolist(), k[R_WR].round().tolist()],
-                              "ears": [e.round().tolist() for e in ear_pts], "shoulder_w": round(float(sw))}
             shm = mean_pt(k, c, (L_SH, R_SH))
             if shm is not None and c[NOSE] > KP_OK:
                 gap = (shm[1] - k[NOSE][1]) / sw
@@ -1017,6 +1022,8 @@ class Demo:
             "reading": {"active": self.reading, "lean_count": self.lean_count},
             "recording": self.recording, "professor_url": self.server.prof_url,
             "objects": [[n, round(c, 2), bool(h)] for n, c, b, h in self.objects],
+            "ear_debug": getattr(self, "ear_debug", None),
+            "reaction_values": {k: r.value for k, r in self.resp.items()},
             "hectic": {"value": round(self.hectic), "parts": self.hectic_parts, "locked": self.mode == "locked",
                        "name": self.cfg.get("student_name", "Demo student"),
                        "lost": bool(self.mode == "locked" and self.locked_lost_at)},
