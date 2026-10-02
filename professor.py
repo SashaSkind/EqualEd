@@ -39,7 +39,7 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 async function load(){try{const r=await fetch('alerts.json',{cache:'no-store'});const a=await r.json();
 let fresh=false;a.forEach(x=>{if(!seen.has(x.id)){seen.add(x.id);if(!first)fresh=true;}});first=false;if(fresh)chime();
 const L=document.getElementById('list');if(!a.length){L.innerHTML='<p class=empty>No alerts yet.</p>';return;}
-L.innerHTML=a.slice().reverse().map(x=>`<div class="card ${x.ack?'ack':''}"><div class=who>${esc(x.student)} may be overwhelmed</div>
+L.innerHTML=a.slice().reverse().map(x=>`<div class="card ${x.ack?'ack':''}"><div class=who>${esc(x.student)} ${x.kind=='hectic'?'needs help: very busy around them':'may be overwhelmed'}</div>
 <div class=time>${esc(x.time)}</div><div class=why>${esc(x.reason)}</div>
 ${x.triggers.length?`<div class=time>Just before: ${esc(x.triggers.join(', '))}</div>`:''}
 ${x.cosmos?`<div class=why><b>NVIDIA Cosmos:</b> ${esc(x.cosmos)}</div>`:''}

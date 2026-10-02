@@ -52,6 +52,10 @@ CHAIR_CLS = 56
 KP_OK = 0.5
 WIN = "EqualEd - classroom support (q to quit)"
 EPISODE_COOLDOWN = 60.0         # seconds before another overload alert
+LOCK_HOLD = 1.0                 # seconds with both hands up to lock onto a student
+HECTIC_ALERT_AT = 60            # "busy around the student" level (0-100) that alerts the teacher
+HECTIC_HOLD = 4.0               # ... if it stays that high this many seconds
+HECTIC_COOLDOWN = 60.0
 PREARM_AT = 0.6                 # risk level that starts the calming sound early
 PREARM_COOLDOWN = 20.0
 PREDICTION_WINDOW = 15.0        # a loud sound within this many seconds counts as "predicted"
@@ -174,6 +178,7 @@ class Track:
         self.sat_at = -1e9
         self.last_stand = -1e9
         self.seen = 0.0
+        self.hands_up_since = None
 
 
 def kp_speed(tr, now, dt=0.3):
@@ -346,6 +351,9 @@ class Demo:
         self.inbox = queue.Queue()
         self.recording = False
         self.one_hand_since = None
+        self.locked_box, self.locked_lost_at, self.lock_flash = None, None, -1e9
+        self.hectic, self.hectic_since, self.hectic_alert_at, self.hectic_parts = 0.0, None, -1e9, []
+        self.ring_motion = 0.0
         self.requested_source, self.source_label = None, "webcam"
         self._state = "{}"
         self.last_publish = 0.0
@@ -522,6 +530,36 @@ class Demo:
                 self.mode, self.target_id = "pick", min(hit, key=lambda p: bw(p[1]) * bh(p[1]))[0]
             else:
                 self.mode, self.target_id = "solo", None
+        # Lock-on gesture: both hands raised above the head for LOCK_HOLD seconds = "track me"
+        for tid, b, k, c, tr in people:
+            sw_ = shoulder_w(k, c, b)
+            if c[NOSE] > KP_OK:
+                top = k[NOSE][1]
+            else:
+                shp = mean_pt(k, c, (L_SH, R_SH))
+                top = (shp[1] if shp is not None else b[1] + 0.3 * bh(b)) - 0.8 * sw_
+            up = c[L_WR] > 0.5 and c[R_WR] > 0.5 and k[L_WR][1] < top - 0.15 * sw_ and k[R_WR][1] < top - 0.15 * sw_
+            if up:
+                tr.hands_up_since = tr.hands_up_since or now
+                if now - tr.hands_up_since >= LOCK_HOLD and not (self.mode == "locked" and self.target_id == tid):
+                    self.mode, self.target_id, self.locked_box = "locked", tid, b.copy()
+                    self.locked_lost_at, self.lock_flash = None, now
+                    self.log_event("locked", "lock", f"Now tracking {self.cfg.get('student_name', 'the student')} (hands-up gesture)", None)
+            else:
+                tr.hands_up_since = None
+        if self.mode == "locked":
+            ids_now = {p[0] for p in people}
+            if self.target_id in ids_now:
+                self.locked_box = next(p[1] for p in people if p[0] == self.target_id).copy()
+                self.locked_lost_at = None
+            elif self.locked_box is not None:
+                # lost (someone walked in front, tracker reset): re-find the person in the same spot
+                self.locked_lost_at = self.locked_lost_at or now
+                lb, lh = self.locked_box, bh(self.locked_box)
+                cands = [p for p in people if np.linalg.norm(center(p[1]) - center(lb)) < 0.6 * lh and 0.6 < bh(p[1]) / lh < 1.6]
+                if cands:
+                    self.target_id = min(cands, key=lambda p: np.linalg.norm(center(p[1]) - center(lb)))[0]
+                    self.locked_box, self.locked_lost_at = next(p[1] for p in cands if p[0] == self.target_id).copy(), None
         if self.mode == "pick" and self.target_id not in self.tracks:
             self.mode = "auto"
         if self.mode == "auto":
@@ -570,6 +608,13 @@ class Demo:
                 x1, y1, x2, y2 = (target[1] * [160 / W, 90 / H, 160 / W, 90 / H]).astype(int)
                 mask[max(y1, 0):y2, max(x1, 0):x2] = False
             motion = float(mask.mean())
+            if target is not None:
+                bx = target[1] * [160 / W, 90 / H, 160 / W, 90 / H]
+                cx_, cy_, hw, hh = (bx[0] + bx[2]) / 2, (bx[1] + bx[3]) / 2, (bx[2] - bx[0]), (bx[3] - bx[1])
+                rx1, ry1 = int(max(cx_ - 1.5 * hw, 0)), int(max(cy_ - 1.0 * hh, 0))
+                rx2, ry2 = int(min(cx_ + 1.5 * hw, 160)), int(min(cy_ + 1.0 * hh, 90))
+                ring = mask[ry1:ry2, rx1:rx2]
+                self.ring_motion = float(ring.mean()) if ring.size else 0.0
         self.prev_small = small
         self.light.append((now, raw_mean))
         old = sample_ago(self.light, now, 0.3)
@@ -628,6 +673,29 @@ class Demo:
                 else:
                     self.log_event("trigger", key, t.label, frame, {"detail": val}, pkey=key, detail=val)
 
+        # 6b) "busy around the student" meter (no sound in it): people, movement and approaches
+        #     inside the student's personal bubble only
+        if target is not None:
+            movers_near = sum(1 for t in near if speeds.get(t, 0) > 0.6)
+            hp = [(min(1.0, len(near) / 3) * 35, f"{len(near)} people close"),
+                  (min(1.0, movers_near / 2) * 25, f"{movers_near} moving near"),
+                  (15 if fastest_grow > 0.6 else 0, "someone approaching fast"),
+                  (10 if self.trig["rapid"].alerting(now) else 0, "rapid movement"),
+                  (min(1.0, self.ring_motion / 0.25) * 15, "lots of motion around"),
+                  (10 if any(self.trig[k].alerting(now) for k in ("stand", "rush", "chair")) else 0, "people getting up / chairs"),
+                  (10 if self.trig["too_close"].alerting(now) else 0, "someone in personal space")]
+            raw_h = min(100.0, sum(v for v, _ in hp))
+            self.hectic_parts = [n for v, n in sorted(hp, key=lambda x: -x[0]) if v > 0][:3]
+        else:
+            raw_h, self.hectic_parts = 0.0, []
+        self.hectic = 0.7 * self.hectic + 0.3 * raw_h if raw_h > self.hectic else 0.95 * self.hectic + 0.05 * raw_h
+        if self.hectic >= HECTIC_ALERT_AT:
+            self.hectic_since = self.hectic_since or now
+            if now - self.hectic_since >= HECTIC_HOLD and now - self.hectic_alert_at > HECTIC_COOLDOWN:
+                self.hectic_alert(now, frame)
+        else:
+            self.hectic_since = None
+
         # 7) risk meter: what is likely to get loud or overwhelming in the next few seconds
         parts = []
         for name, conf, box, held in self.objects:
@@ -654,7 +722,7 @@ class Demo:
         resp_state = {"ears": (False, ""), "head_down": (False, ""), "rocking": (False, "")}
         # Reactions are judged only for someone close to the camera (the student at this laptop).
         # A small figure across the room is too far to tell ear-covering or rocking from normal gestures.
-        close_enough = subject is not None and (self.mode == "pick" or bh(subject[1]) >= 0.35 * H)
+        close_enough = subject is not None and (self.mode in ("pick", "locked") or bh(subject[1]) >= 0.35 * H)
         if not close_enough:
             resp_state = {k: (False, "no student close to the camera") for k in resp_state}
         if close_enough:
@@ -771,6 +839,19 @@ class Demo:
         self.log_event("loud sound", "noise", label.capitalize(), frame, {"detail": desc}, pkey="sound:" + label,
                        plabel=label.capitalize() + " sound", detail=detail)
 
+    def hectic_alert(self, now, frame):
+        self.hectic_alert_at = now
+        name = self.cfg.get("student_name", "The student")
+        where = self.calm.play()
+        sound = (f"Calming sound playing on {where}" if where else "Calming sound held back: no AirPods connected")
+        why = ", ".join(self.hectic_parts) or "a lot going on"
+        aid = self.server.notify(f"Very busy around {name}: {why}. Please check in.",
+                                 sorted({lbl for t, lbl in self.recent if now - t <= 20}), sound, kind="hectic")
+        self.episode = {"at": now, "id": aid, "where": where, "reason": f"Busy around {name}: {why}", "sound": sound}
+        self.episode_count += 1
+        self.log_event("busy alert", "hectic", f"Teacher alerted: busy around {name} ({self.hectic:.0f}/100)", frame,
+                       detail=why, pkey="hectic", plabel="Busy around me")
+
     def start_episode(self, reacting, frame, now):
         causes = sorted({lbl for t, lbl in self.recent if now - t <= 20})
         where = self.calm.play()
@@ -819,7 +900,8 @@ class Demo:
         segs = self.transcriber.recent(80)
         st = {
             "t": now, "student": self.cfg.get("student_name", "Demo student"), "fps": round(self.fps),
-            "mode": {"auto": "biggest person", "pick": f"person {self.target_id}", "solo": "solo test"}[self.mode],
+            "mode": {"auto": "biggest person", "pick": f"person {self.target_id}", "solo": "solo test",
+                     "locked": f"locked on {self.cfg.get('student_name', 'student')}"}[self.mode],
             "mic": {"ok": self.audio.ok, "error": self.audio.error, "db": self.audio.db,
                     "label": self.audio.label},
             "sound_out": {"name": self.calm.output_name, "headphones": self.calm.headphones,
@@ -847,6 +929,9 @@ class Demo:
             "reading": {"active": self.reading, "lean_count": self.lean_count},
             "recording": self.recording, "professor_url": self.server.prof_url,
             "objects": [[n, round(c, 2), bool(h)] for n, c, b, h in self.objects],
+            "hectic": {"value": round(self.hectic), "parts": self.hectic_parts, "locked": self.mode == "locked",
+                       "name": self.cfg.get("student_name", "Demo student"),
+                       "lost": bool(self.mode == "locked" and self.locked_lost_at)},
             "vast": {"status": self.vast.status, "gpu": self.vast.gpu_on, "archive": self.vast.archive_on,
                      "wandb": self.vast.wandb_on, "cosmos": self.cosmos.latest, "cosmos_error": self.cosmos.error,
                      "cosmos_calls": self.cosmos.calls, "cosmos_video": self.vast.video_mode,
@@ -882,8 +967,19 @@ class Demo:
                 cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 0, 255), 4)
         if target is not None:
             x1, y1, x2, y2 = map(int, target[1])
+            hc = (0, 0, 230) if self.hectic >= HECTIC_ALERT_AT else (0, 150, 255) if self.hectic >= 35 else (0, 200, 0)
+            cv2.ellipse(vis, ((x1 + x2) // 2, (y1 + y2) // 2), (int(1.5 * (x2 - x1)), int(1.0 * (y2 - y1))), 0, 0, 360, hc, 2)
             cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 230, 255), 4)
-            put(vis, "STUDENT", (x1 + 6, y1 + 24), 0.8, (0, 230, 255), 2)
+            label = f"LOCKED: {self.cfg.get('student_name', 'STUDENT')}" if self.mode == "locked" else "STUDENT"
+            put(vis, label, (x1 + 6, y1 + 24), 0.8, (0, 230, 255), 2)
+            put(vis, f"busy around: {self.hectic:.0f}/100", (x1 + 6, y1 + 50), 0.6, hc, 2)
+        if self.mode == "locked" and self.locked_lost_at:
+            put(vis, f"Looking for {self.cfg.get('student_name', 'the student')}... raise both hands to re-lock", (10, H - 50), 0.6, (0, 200, 255), 2)
+        elif self.mode != "locked":
+            put(vis, "Raise both hands for 1 second to lock onto a student", (10, H - 50), 0.6, (255, 255, 255), 2)
+        if now - self.lock_flash < 2.5:
+            cv2.rectangle(vis, (0, H // 2 - 30), (W, H // 2 + 20), (0, 160, 0), -1)
+            put(vis, f"LOCKED ON: tracking {self.cfg.get('student_name', 'this student')} only", (20, H // 2 + 2), 0.9, (255, 255, 255), 2)
         if raw_mean < 5:
             put(vis, "Camera image is black: lens covered or wrong camera. Press C.", (10, H - 60), 0.6, (0, 0, 255), 2)
         firing = [t.label for t in self.trig.values() if t.alerting(now)]
@@ -946,7 +1042,8 @@ class Demo:
         a = self.attention
         put(strip, f"Attention (ADHD): {'focused' if a.state == 'focused' else 'away - ' + a.reason}"[:42], (x, 80), 0.42,
             (0, 200, 0) if a.state == "focused" else (0, 165, 255))
-        put(strip, f"Drops: {len(a.drops)}   focused {a.focused_pct():.0f}%", (x, 98), 0.42, (200, 200, 200))
+        put(strip, f"Busy around student: {self.hectic:.0f}/100 (alert at {HECTIC_ALERT_AT})", (x, 98), 0.42,
+            (0, 0, 255) if self.hectic >= HECTIC_ALERT_AT else (200, 200, 200))
         put(strip, ("Linked: " + self.last_link)[:44], (x, 118), 0.38, (0, 230, 255))
         if self.recording:
             cv2.circle(strip, (x + 6, 136), 6, (0, 0, 255), -1)
@@ -1096,7 +1193,7 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
-        elif key == ord("a"):
+        elif key in (ord("a"), ord("u")):
             demo.mode = "auto"
         elif key == ord("s"):
             demo.simulate("overload")

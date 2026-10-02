@@ -44,9 +44,9 @@ class Server:
         self._serve()
 
     # professor alerts ------------------------------------------------------
-    def notify(self, reason, triggers, sound):
+    def notify(self, reason, triggers, sound, kind="overload"):
         with self.lock:
-            a = {"id": len(self.alerts) + 1, "time": time.strftime("%I:%M:%S %p").lstrip("0"),
+            a = {"id": len(self.alerts) + 1, "kind": kind, "time": time.strftime("%I:%M:%S %p").lstrip("0"),
                  "student": self.student, "reason": reason, "triggers": triggers, "sound": sound, "ack": False}
             self.alerts.append(a)
             return a["id"]
@@ -199,6 +199,8 @@ textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:v
  <div class=card><h2>Predicted before the sound</h2><div class=big id=hits>0</div>
   <div class=muted id=hitTxt>No loud sounds yet</div><div class="small muted" id=lastHit></div></div>
  <div class=card><h2>Sound in the room</h2><div class=big id=db>--</div><div class=meter><div id=dbBar></div></div><div class=muted id=snd></div></div>
+ <div class=card><h2>Busy around the student</h2><div class=big id=hv>0</div><div class=meter><div id=hb></div></div>
+  <div class=muted id=hw>Raise both hands in front of the camera for 1 second to lock onto a student.</div></div>
  <div class=card><h2>NVIDIA Cosmos3-Reason sees</h2><div id=cz class=muted>Waiting for Cosmos...</div></div>
  <div class=card><h2>Overload support</h2><div id=over class=muted>No overload moments yet</div>
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="b" onclick="post('simulate',{what:'overload'})">Simulate overload</button>
@@ -303,6 +305,8 @@ function render(){if(!S)return;$('who').textContent=S.student;
  $('lastHit').textContent=P.last||'';
  const db=S.mic.db;$('db').textContent=S.mic.ok?Math.round(db)+' dB':'--';const dbp=Math.max(0,Math.min(100,(db+70)*1.6));$('dbBar').style.width=dbp+'%';$('dbBar').style.background=color(dbp);
  $('snd').textContent=S.mic.label?('Hearing: '+S.mic.label):'';
+ const HC=S.hectic;$('hv').textContent=HC.value+' / 100';$('hb').style.width=HC.value+'%';$('hb').style.background=color(HC.value);
+ $('hw').textContent=HC.locked?(HC.lost?'Looking for '+HC.name+'... raise both hands to re-lock.':'Locked on '+HC.name+'. '+(HC.parts.length?'Now: '+HC.parts.join(', '):'Calm around them.')+' Teacher is alerted at 60 for 4 s.'):'Raise both hands in front of the camera for 1 second to lock onto a student.';
  const C=S.vast.cosmos;$('cz').innerHTML=!S.vast.gpu?'Paste your team GPU key into <b>vast.env</b> to turn on live reasoning by NVIDIA Cosmos3-Reason.'
   :C?`<div class=big style="font-size:22px">${esc(C.what||'nothing risky')}</div><div class=meter><div style="width:${Math.round(C.risk*100)}%;background:${color(C.risk*100)}"></div></div>
    <div>${esc(C.why)}</div><div class="small muted">risk ${Math.round(C.risk*100)}% · answered in ${C.latency}s · ${S.vast.cosmos_calls} reads · ${S.vast.cosmos_video?'video':'still frames'}</div>`
