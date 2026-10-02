@@ -47,3 +47,13 @@ if [[ "$1" == "--install" ]]; then
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/$APP"
   echo "Installed to /Applications/$APP. Open it from Spotlight or Launchpad."
 fi
+
+# Second app: "EqualEd Teacher" opens the teacher dashboard (starts EqualEd first if needed).
+rm -rf "EqualEd Teacher.app"
+osacompile -o "EqualEd Teacher.app" teacher_app.applescript
+cp "$APP/Contents/Resources/AppIcon.icns" "EqualEd Teacher.app/Contents/Resources/applet.icns"
+codesign --force --deep --sign - "EqualEd Teacher.app"
+if [[ "$1" == "--install" ]]; then
+  rm -rf "/Applications/EqualEd Teacher.app"; cp -R "EqualEd Teacher.app" /Applications/
+fi
+echo "Built EqualEd Teacher.app (opens the teacher dashboard)."

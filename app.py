@@ -21,7 +21,20 @@ _lock = open(os.path.join(HERE, ".running.lock"), "w")
 try:
     fcntl.flock(_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except OSError:
-    print("Another copy is already running; this one exits.", flush=True)
+    # Already running: clicking the app again just opens the teacher dashboard.
+    print("Another copy is already running; opening the teacher dashboard.", flush=True)
+    try:
+        import socket, subprocess
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("10.255.255.255", 1)); ip = s.getsockname()[0]
+        except Exception:
+            ip = "127.0.0.1"
+        tok = open(os.path.join(HERE, "professor_token.txt")).read().strip()
+        port = os.environ.get("EQUALED_PORT", "8765")
+        subprocess.Popen(["open", f"http://{ip}:{port}/p/{tok}/"])
+    except Exception as e:
+        print("could not open the teacher dashboard:", e, flush=True)
     sys.exit(0)
 mode = "sensory"
 p = os.path.join(HERE, "mode.txt")

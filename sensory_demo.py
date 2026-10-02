@@ -1283,9 +1283,11 @@ def main():
     log("microphone permission:", "granted" if mic_ok else "denied")
     demo = Demo(use_audio=mic_ok)
     log("student dashboard:", demo.server.student_url)
-    if cfg.get("open_dashboard", True) and demo.server.student_url.startswith("http"):
+    if cfg.get("open_dashboard", True) and demo.server.prof_url.startswith("http"):
         import subprocess
-        subprocess.Popen(["open", demo.server.student_url])
+        subprocess.Popen(["open", demo.server.prof_url])        # teacher dashboard
+        if cfg.get("open_student_dashboard", False):
+            subprocess.Popen(["open", demo.server.student_url])
     log("professor page:", demo.server.prof_url)
     cv2.namedWindow(WIN, cv2.WINDOW_AUTOSIZE)
     raise_window(WIN)
