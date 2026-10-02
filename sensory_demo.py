@@ -367,6 +367,8 @@ class Demo:
         # hackathon stack: Cosmos3-Reason + Canary-1B on CoreWeave, VSS archive, W&B inference
         self.vast = Vast()
         self.cosmos = CosmosWatcher(self.vast, start=use_audio)   # self-test makes no network calls
+        if use_audio:
+            self.vast.init_tracing()
         self.archive, self.archive_error = self.load_archive_labels(), ""
         self.transcriber = Transcriber(self.audio, vast=self.vast)
         # risk + predictions
@@ -431,6 +433,18 @@ class Demo:
         return {"places": places, "clips": clips,
                 "time": f"{a['labeled_at']} ({a['clips_labeled']} clips: {a['levels']['high']} high, "
                         f"{a['levels']['moderate']} moderate, {a['levels']['calm']} calm)"}
+
+    def archive_summary(self):
+        if not self.vast.wandb_on:
+            return {"error": "Add WANDB_API_KEY to vast.env to summarize with W&B."}
+        if not self.archive or not self.archive.get("places"):
+            return {"error": "No sensory map yet. Scan the archive first."}
+        try:
+            text, src = self.vast.summarize_archive(self.archive)
+            self.log_event("archive summary", "archive", text[:120], None)
+            return {"summary": text, "source": src}
+        except Exception as e:
+            return {"error": f"W&B summary failed: {type(e).__name__}: {str(e)[:160]}"}
 
     def footage_list(self):
         p = os.path.join(HERE, "archive_clips", "index.json")

@@ -6,6 +6,8 @@ PY=${PYTHON:-python3.11}
 $PY -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
+# Weave traces Cosmos and W&B calls (optional: the app runs without it)
+.venv/bin/pip install weave==0.53.11 || echo "weave not installed; tracing stays off"
 # Sound classifier (YAMNet, ~4 MB)
 curl -sL -o yamnet.tflite "https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/audio_classification/android/lite-model_yamnet_classification_tflite_1.tflite"
 # Sample image for the offline self-test

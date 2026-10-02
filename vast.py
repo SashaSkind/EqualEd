@@ -6,7 +6,8 @@ Live (from the laptop, needs GPU_BEARER_TOKEN):
 Archive (needs INGRESS_URL + USERNAME + PASSWORD):
   * VSS search / agent Q&A over the team's indexed footage -> "Sensory map"
 App reasoning (needs WANDB_API_KEY):
-  * Weights & Biases serverless inference for "What did I miss?"
+  * Weights & Biases serverless inference (Llama 3.3 70B) for "What did I miss?" and archive summaries
+  * Weave traces every Cosmos and W&B call (project vastdata/team-17, same as the VM app)
 
 Keys come from the environment or from vast.env next to this file (git-ignored).
 Copy the values from the workshop VM's /config/<team>.config into vast.env.
@@ -17,6 +18,10 @@ import requests
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_GPU_HOST = "166.19.38.112"
 WANDB_BASE = "https://api.inference.wandb.ai/v1"
+# Same models and project as the VM app (vm/VM_NOTES.md). Override any of them in vast.env.
+DEFAULTS = {"COSMOS3_REASON_MODEL": "nvidia/cosmos3-nano-reasoner",
+            "WANDB_MODEL": "meta-llama/Llama-3.3-70B-Instruct",
+            "WANDB_TEAM": "vastdata", "WANDB_PROJECT": "team-17"}
 
 SENSORY_INGEST_PROMPT = (
     "Describe this clip for a student with autism who is sensitive to sensory overload. "
@@ -70,6 +75,8 @@ def load_settings():
     vals.setdefault("YOLO_URL", f"http://{host}:8002")
     vals.setdefault("COSMOS_EMBED1_URL", f"http://{host}:8003")
     vals.setdefault("CANARY_1B_URL", f"http://{host}:8004")
+    for k, v in DEFAULTS.items():
+        vals.setdefault(k, v)
     return vals
 
 
@@ -95,10 +102,39 @@ class Vast:
         self.status = {"cosmos": "no key" if not self.gpu_on else "not checked",
                        "canary": "no key" if not self.gpu_on else "not checked",
                        "archive": "no login" if not self.archive_on else "not checked",
-                       "wandb": "no key" if not self.wandb_on else "ready"}
+                       "wandb": "no key" if not self.wandb_on else "ready",
+                       "weave": "off"}
         self.video_mode = True     # send real video; falls back to still frames if refused
         self._jwt, self._jwt_at = None, 0
         self._wandb_model = self.s.get("WANDB_MODEL", "")
+        self._wandb_project = f"{self.s['WANDB_TEAM']}/{self.s['WANDB_PROJECT']}"
+        self._use_project = True   # dropped if this key is not a member of that W&B team
+
+    def init_tracing(self):
+        """Trace Cosmos and W&B calls with Weave, in the background so start-up never waits."""
+        if self.wandb_on:
+            threading.Thread(target=self._init_weave, daemon=True).start()
+
+    def _init_weave(self):
+        try:
+            import weave
+        except ImportError:
+            self.status["weave"] = "not installed (pip install weave)"
+            return
+        os.environ.setdefault("WANDB_API_KEY", self.s["WANDB_API_KEY"])
+        last = None
+        for project in (self._wandb_project, self.s["WANDB_PROJECT"]):
+            try:
+                weave.init(project)
+                self.status["weave"] = f"tracing to {project}"
+                break
+            except Exception as e:
+                last = e
+        else:
+            self.status["weave"] = f"off ({type(last).__name__})"
+            return
+        for name in ("wandb_chat", "cosmos_risk", "cosmos_explain", "canary"):
+            setattr(self, name, weave.op(getattr(self, name)))
 
     def _h(self):
         return {"Authorization": f"Bearer {self.token}"}
@@ -118,7 +154,7 @@ class Vast:
                     r = requests.get(self.s["COSMOS3_REASON_URL"] + "/v1/models", headers=self._h(), timeout=6)
                     self.cosmos_model = r.json()["data"][0]["id"]
                 except Exception:
-                    self.cosmos_model = "nvidia/cosmos3-nano-reasoner"
+                    self.cosmos_model = DEFAULTS["COSMOS3_REASON_MODEL"]
         if self.archive_on:
             try:
                 self._login(force=True)
@@ -137,8 +173,8 @@ class Vast:
             for j in (jpgs or [])[:6]:
                 content.append({"type": "image_url",
                                 "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(j).decode()}})
-        body = {"model": self.cosmos_model or "nvidia/cosmos3-nano-reasoner",
-                "messages": [{"role": "user", "content": content}], "max_tokens": max_tokens, "temperature": 0}
+        body = {"model": self.cosmos_model or DEFAULTS["COSMOS3_REASON_MODEL"],
+                "messages": [{"role": "user", "content": content}], "max_tokens": max_tokens, "temperature": 0.2}
         r = requests.post(self.s["COSMOS3_REASON_URL"] + "/v1/chat/completions", headers=self._h(), json=body, timeout=timeout)
         if r.status_code >= 400 and mp4_bytes is not None and self.video_mode and jpgs:
             self.video_mode = False          # server would not take our video; use still frames from now on
@@ -266,17 +302,31 @@ class Vast:
 
     # ---------------------------------------------------------------- W&B inference
     def wandb_chat(self, prompt, timeout=60):
-        h = {"Authorization": f"Bearer {self.s['WANDB_API_KEY']}"}
-        if self.s.get("WANDB_TEAM") and self.s.get("WANDB_PROJECT"):
-            h["OpenAI-Project"] = f"{self.s['WANDB_TEAM']}/{self.s['WANDB_PROJECT']}"
-        if not self._wandb_model:
-            ids = [m["id"] for m in requests.get(WANDB_BASE + "/models", headers=h, timeout=15).json().get("data", [])]
-            prefs = ("Llama-3.3-70B", "Qwen3-235B", "DeepSeek-V3", "gpt-oss-120b", "Llama-4")
-            self._wandb_model = next((i for p in prefs for i in ids if p.lower() in i.lower()), ids[0] if ids else "")
-        r = requests.post(WANDB_BASE + "/chat/completions", headers=h, timeout=timeout, json={
-            "model": self._wandb_model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 600})
+        body = {"model": self._wandb_model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 600}
+        for attempt in (0, 1):
+            h = {"Authorization": f"Bearer {self.s['WANDB_API_KEY']}"}
+            if self._use_project:
+                h["OpenAI-Project"] = self._wandb_project
+            r = requests.post(WANDB_BASE + "/chat/completions", headers=h, timeout=timeout, json=body)
+            if r.status_code in (401, 403, 404) and self._use_project and attempt == 0:
+                self._use_project = False      # a personal key outside the vastdata team: bill its own default project
+                continue
+            break
         r.raise_for_status()
+        self.status["wandb"] = "connected"
         return r.json()["choices"][0]["message"]["content"].strip(), f"W&B ({self._wandb_model})"
+
+    def summarize_archive(self, archive):
+        """Plain-language summary of a sensory map: where and when it is most and least overwhelming."""
+        places = "\n".join(f"- {p['place']}: load {p.get('score')} ({p.get('top', '')})" for p in archive.get("places", [])[:12])
+        clips = "\n".join(f"- [{c.get('trigger')}] {c.get('place')}: {str(c.get('caption', ''))[:220]}"
+                           for c in archive.get("clips", [])[:15])
+        prompt = ("You help a teacher plan for an autistic student who is sensitive to noise, crowds and sudden movement. "
+                  "Below is a sensory map of camera footage, ranked from most to least overwhelming, and the strongest "
+                  "moments with their video captions.\n\nPlaces:\n" + places + "\n\nMoments:\n" + clips +
+                  "\n\nIn 4 short sentences of plain language: which places are the most overwhelming and why, "
+                  "which are the calmest, and one practical suggestion for the student's day. Do not invent places.")
+        return self.wandb_chat(prompt)
 
 
 class CosmosWatcher:

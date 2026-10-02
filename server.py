@@ -193,6 +193,8 @@ class Server:
                     b.settings(d); return self._json({"ok": True})
                 if route == "archive_scan":
                     return self._json(b.archive_scan())
+                if route == "archive_summary":
+                    return self._json(b.archive_summary())
                 if route == "footage_find":
                     return self._json(b.footage_find())
                 if route == "play":
@@ -306,7 +308,9 @@ textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:v
  <div class=card style="grid-column:1/-1"><h2>Sensory map of the video archive</h2>
   <p class="muted small">Searches the team's VAST archive (indexed by NVIDIA Cosmos3-Reason, YOLO11 and Cosmos Embed1) for sensory triggers,
   then ranks every camera and place from most overwhelming to calmest. Use it to plan a calmer route or schedule for a student.</p>
-  <button class="b primary" id=scanB onclick=scan()>Scan the archive</button> <span class="small muted" id=scanStat></span>
+  <button class="b primary" id=scanB onclick=scan()>Scan the archive</button>
+  <button class=b id=sumB onclick=summarize()>Summarize with W&amp;B</button> <span class="small muted" id=scanStat></span>
+  <div class=answer id=sumOut></div>
   <div id=places style="margin-top:12px"></div></div>
  <div class=card style="grid-column:1/-1"><h2>Hackathon footage: people crowding a person</h2>
   <p class="muted small">Searches the organizers' indexed footage for crowding, surrounding and closing-in moments, downloads the best
@@ -352,6 +356,9 @@ function renderArchive(r){if(!r||!r.places)return;const mx=Math.max(0.01,...r.pl
   <div class=meter><div style="width:${Math.max(3,100*Math.max(0,p.score)/mx)}%;background:${p.score>mx*.6?'var(--red)':p.score>mx*.3?'var(--orange)':'var(--green)'}"></div></div></span>
   <span class="right small">${'load '+p.score+'/10'}</span></div>`).join(''):'No matches. Try re-ingesting with the sensory prompt below.';
  $('clips').innerHTML=r.clips.length?r.clips.map(c=>`<div class=ev><div class=t>${esc(c.trigger)} · ${esc(c.place)} · load ${c.similarity}/10</div><div>${esc(c.caption)}</div></div>`).join(''):'None.';}
+async function summarize(){$('sumB').disabled=true;$('sumOut').textContent='Asking Llama 3.3 70B on W&B Inference...';
+ const r=await post('archive_summary',{});$('sumB').disabled=false;
+ $('sumOut').textContent=r.error||(r.summary+'\n\n— '+r.source);}
 async function findFootage(){$('ffB').disabled=true;$('ffStat').textContent='Searching and downloading (1 to 2 minutes)...';
  const r=await post('footage_find',{});$('ffB').disabled=false;$('ffStat').textContent=r.error||('Found '+(r.clips||[]).length+' clips');}
 function renderFootage(list){$('footage').innerHTML=(list&&list.length)?list.map(c=>`<div class=ev><div class=t>${esc(c.location||'?')} · ${esc(c.camera_id||'?')} · match ${c.similarity} · "${esc(c.query)}"</div>
@@ -366,7 +373,8 @@ function render(){if(!S)return;$('who').textContent=S.student;
   +chip(so.headphones?'Sound: '+so.name:(so.allow_speakers?'Speakers allowed':'Put in AirPods (now '+so.name+')'),so.headphones||so.allow_speakers?'ok':'warn')
   +chip('Cosmos: '+(S.vast.gpu?S.vast.status.cosmos:'add key'),S.vast.status.cosmos=='connected'?'ok':(S.vast.gpu?'bad':'warn'))
   +chip('Archive: '+(S.vast.archive?S.vast.status.archive:'add login'),S.vast.status.archive=='connected'?'ok':'warn')
-  +chip('W&B: '+(S.vast.wandb?'ready':'add key'),S.vast.wandb?'ok':'warn')+chip('Student: '+S.mode)+(S.recording?chip('● Recording','bad'):'');
+  +chip('W&B: '+(S.vast.wandb?S.vast.status.wandb:'add key'),S.vast.wandb?'ok':'warn')
+  +(S.vast.wandb?chip('Weave: '+S.vast.status.weave,S.vast.status.weave.startsWith('tracing')?'ok':'warn'):'')+chip('Student: '+S.mode)+(S.recording?chip('● Recording','bad'):'');
  const r=Math.round(S.risk.value*100);$('riskV').textContent=r+'%';$('riskBar').style.width=r+'%';$('riskBar').style.background=color(r);
  $('riskWhy').textContent=S.risk.reason?('Because: '+S.risk.reason):'Calm';
  $('bHeads').className='banner warn'+(S.risk.prearmed?' show':'');$('bHeads').textContent='Heads up: '+S.risk.prearm_reason+'. Calming sound started early.';
