@@ -124,6 +124,10 @@ class Server:
                     b.settings(d); return self._json({"ok": True})
                 if route == "archive_scan":
                     return self._json(b.archive_scan())
+                if route == "footage_find":
+                    return self._json(b.footage_find())
+                if route == "play":
+                    return self._json(b.play_source(str(d.get("source", ""))))
                 if route == "archive_ask":
                     return self._json(b.archive_ask(str(d.get("question", ""))[:500]))
                 if route == "simulate":
@@ -233,6 +237,12 @@ textarea,input[type=text]{width:100%;font:inherit;color:var(--text);background:v
   then ranks every camera and place from most overwhelming to calmest. Use it to plan a calmer route or schedule for a student.</p>
   <button class="b primary" id=scanB onclick=scan()>Scan the archive</button> <span class="small muted" id=scanStat></span>
   <div id=places style="margin-top:12px"></div></div>
+ <div class=card style="grid-column:1/-1"><h2>Hackathon footage: people crowding a person</h2>
+  <p class="muted small">Searches the organizers' indexed footage for crowding, surrounding and closing-in moments, downloads the best
+  clips to this Mac, and lets you run EqualEd on them instead of the webcam. Now showing: <b id=src>webcam</b></p>
+  <button class="b primary" id=ffB onclick=findFootage()>Find and download clips</button>
+  <button class=b onclick="post('play',{source:'webcam'})">Back to webcam</button> <span class="small muted" id=ffStat></span>
+  <div id=footage style="margin-top:10px"></div></div>
  <div class=card style="grid-column:1/-1"><h2>Strongest matching moments</h2><div id=clips class="small muted">Run a scan first.</div></div>
  <div class=card style="grid-column:1/-1"><h2>Ask the archive</h2>
   <div style="display:flex;gap:8px"><input type=text id=aq placeholder="e.g. Where is it usually most crowded?">
@@ -271,6 +281,10 @@ function renderArchive(r){if(!r||!r.places)return;const mx=Math.max(0.01,...r.pl
   <div class=meter><div style="width:${Math.max(3,100*Math.max(0,p.score)/mx)}%;background:${p.score>mx*.6?'var(--red)':p.score>mx*.3?'var(--orange)':'var(--green)'}"></div></div></span>
   <span class="right small">${p.score>0?'load '+p.score:'calm'}</span></div>`).join(''):'No matches. Try re-ingesting with the sensory prompt below.';
  $('clips').innerHTML=r.clips.length?r.clips.map(c=>`<div class=ev><div class=t>${esc(c.trigger)} · ${esc(c.place)} · match ${c.similarity}</div><div>${esc(c.caption)}</div></div>`).join(''):'None.';}
+async function findFootage(){$('ffB').disabled=true;$('ffStat').textContent='Searching and downloading (1 to 2 minutes)...';
+ const r=await post('footage_find',{});$('ffB').disabled=false;$('ffStat').textContent=r.error||('Found '+(r.clips||[]).length+' clips');}
+function renderFootage(list){$('footage').innerHTML=(list&&list.length)?list.map(c=>`<div class=ev><div class=t>${esc(c.location||'?')} · ${esc(c.camera_id||'?')} · match ${c.similarity} · "${esc(c.query)}"</div>
+ <div class=small>${esc(c.caption)}</div><button class="b" style="margin-top:4px" onclick='post("play",{source:${JSON.stringify(c.file)}})'>Run EqualEd on this clip</button></div>`).join(''):'<span class="small muted">No clips downloaded yet.</span>';}
 async function askArchive(){const q=$('aq').value.trim();if(!q)return;$('aqB').disabled=true;$('aans').textContent='Asking the archive...';
  const r=await post('archive_ask',{question:q});$('aans').textContent=r.answer||'No answer';$('aqB').disabled=false;}
 async function ask(){const q=$('q').value.trim();if(!q)return;$('askB').disabled=true;$('ans').textContent='Thinking...';
@@ -293,7 +307,8 @@ function render(){if(!S)return;$('who').textContent=S.student;
   :C?`<div class=big style="font-size:22px">${esc(C.what||'nothing risky')}</div><div class=meter><div style="width:${Math.round(C.risk*100)}%;background:${color(C.risk*100)}"></div></div>
    <div>${esc(C.why)}</div><div class="small muted">risk ${Math.round(C.risk*100)}% · answered in ${C.latency}s · ${S.vast.cosmos_calls} reads · ${S.vast.cosmos_video?'video':'still frames'}</div>`
   :(S.vast.cosmos_error?'Error: '+esc(S.vast.cosmos_error):'Watching... first read in a few seconds.');
- $('ip').value=S.vast.ingest_prompt;if(S.archive&&!$('places').innerHTML)renderArchive(S.archive);
+ $('ip').value=S.vast.ingest_prompt;$('src').textContent=S.source;
+ const fk=JSON.stringify((S.footage||[]).map(c=>c.file));if(fk!==window._fk){window._fk=fk;renderFootage(S.footage);}if(S.archive&&!$('places').innerHTML)renderArchive(S.archive);
  const O=S.overload;$('over').innerHTML=O.active?`<b style="color:var(--red)">${esc(O.reason)}</b><br>${esc(O.sound)}${S.overload_cosmos?'<br><b>Cosmos:</b> '+esc(S.overload_cosmos):''}<br>Professor: ${O.acked?'<b style="color:var(--green)">on the way</b>':'notified, waiting'}`:(O.count?`${O.count} overload moment(s) so far. Last: ${esc(O.reason)}`:'No overload moments yet');
  $('bOver').className='banner bad'+(O.active?' show':'');$('bOver').textContent='Overload support active: '+O.reason+(O.acked?' · professor on the way':' · professor notified');
  $('trigs').innerHTML=S.triggers.map(t=>`<div class=row><span class="dot ${!t.live?'off':t.alerting?'on':''}"></span><span class=grow>${esc(t.label)}<br><span class="small muted">${esc(t.value)}</span></span><span class="right small muted">${t.count?'×'+t.count:''}</span></div>`).join('');

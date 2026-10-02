@@ -345,6 +345,7 @@ class Demo:
             self.profile = {}
         self.inbox = queue.Queue()
         self.recording = False
+        self.requested_source, self.source_label = None, "webcam"
         self._state = "{}"
         self.last_publish = 0.0
         self.server = Server(self.cfg.get("student_name", "Demo student"), self)
@@ -369,6 +370,33 @@ class Demo:
         except Exception as e:
             self.archive_error = f"{type(e).__name__}: {str(e)[:160]}"
             return {"error": self.archive_error}
+
+    def footage_list(self):
+        p = os.path.join(HERE, "archive_clips", "index.json")
+        try:
+            return [r for r in json.load(open(p)) if r.get("file") and os.path.exists(r["file"])]
+        except Exception:
+            return []
+
+    def footage_find(self):
+        if not self.vast.archive_on:
+            return {"error": "Add INGRESS_URL, USERNAME and PASSWORD to vast.env to search the hackathon footage."}
+        try:
+            import find_footage
+            rows = find_footage.run(top=12, log=lambda *a: None)
+            self.log_event("archive footage", "footage", f"Found {len(rows)} crowding clips in the archive", None)
+            return {"clips": self.footage_list()}
+        except SystemExit as e:
+            return {"error": str(e)}
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+    def play_source(self, what):
+        clips = {r["file"] for r in self.footage_list()}
+        if what == "webcam" or what in clips:
+            self.requested_source = what
+            return {"ok": True}
+        return {"error": "unknown clip"}
 
     def archive_ask(self, q):
         if not self.vast.archive_on:
@@ -796,8 +824,10 @@ class Demo:
                      "cosmos_calls": self.cosmos.calls, "cosmos_video": self.vast.video_mode,
                      "ingest_prompt": SENSORY_INGEST_PROMPT},
             "archive": self.archive, "archive_error": self.archive_error,
+            "source": self.source_label, "footage": self.footage_list() if self.frame_i % 20 == 0 or not hasattr(self, "_fl") else self._fl,
             "overload_cosmos": (ep or {}).get("cosmos", ""),
         }
+        self._fl = st["footage"]
         self._state = json.dumps(st)
 
     # ------------------------------------------------------------ drawing
@@ -1002,7 +1032,24 @@ def main():
     log("running. click the window, press q to quit")
     prev, writer = time.time(), None
     os.makedirs("recordings", exist_ok=True)
+    webcam_cap = None
     while True:
+        if demo.requested_source:
+            want, demo.requested_source = demo.requested_source, None
+            if want == "webcam":
+                if video is not None and cams:
+                    cap.release()
+                    cap = cv2.VideoCapture(cur, cv2.CAP_AVFOUNDATION)
+                video, demo.source_label = (None if cams else video), "webcam"
+            else:
+                if video is None:
+                    cap.release()
+                else:
+                    cap.release()
+                cap, video = cv2.VideoCapture(want), want
+                demo.source_label = "archive clip: " + os.path.basename(want)
+                demo.tracks.clear()
+            log("video source ->", demo.source_label)
         ok, frame = cap.read()
         if not ok:
             if video and not str(video).startswith("http"):

@@ -37,6 +37,19 @@ ARCHIVE_TRIGGERS = [
 ]
 ARCHIVE_CALM = ("Calm", "a quiet empty corridor or street with nobody around")
 
+# Footage for the autism demo: someone being crowded, surrounded or closed in on.
+CROWDING_QUERIES = [
+    "a group of people crowding around one person",
+    "several people surrounding a single person",
+    "a crowd of people packed close together",
+    "people gathering closely in a hallway or corridor",
+    "a person standing in a crowded indoor space",
+    "many pedestrians crossing close together",
+    "people rushing past someone",
+    "a person close to a moving vehicle",
+    "a forklift approaching a person in an aisle",
+]
+
 
 def load_settings():
     vals = {}
@@ -220,6 +233,36 @@ class Vast:
             p["top"] = ", ".join(f"{k} ×{v}" for k, v in sorted(p["hits"].items(), key=lambda kv: -kv[1])[:3])
         clips.sort(key=lambda c: -c["similarity"])
         return {"places": ranked, "clips": clips[:40], "time": time.strftime("%I:%M %p").lstrip("0")}
+
+    def find_footage(self, queries=None, per_query=10, min_similarity=0.25):
+        """Search the archive with crowding questions; one ranked row per unique clip."""
+        best = {}
+        for q in queries or CROWDING_QUERIES:
+            for hit in self.search(q, top_k=per_query, min_similarity=min_similarity).get("results", []):
+                src = hit.get("source")
+                if not src:
+                    continue
+                sim = float(hit.get("similarity_score") or 0)
+                row = best.get(src)
+                if row is None or sim > row["similarity"]:
+                    best[src] = {"source": src, "similarity": round(sim, 3), "query": q,
+                                 "camera_id": hit.get("camera_id") or "", "location": hit.get("location") or "",
+                                 "original_video": hit.get("original_video") or "",
+                                 "caption": (hit.get("reasoning_content") or "")[:400],
+                                 "hits": (row or {}).get("hits", 0)}
+                best[src]["hits"] = best[src].get("hits", 0) + 1
+        rows = sorted(best.values(), key=lambda r: -(r["similarity"] + 0.05 * (r["hits"] - 1)))
+        return rows
+
+    def download(self, source, path):
+        """Save one indexed clip (segment) to a local file."""
+        url = self.s["INGRESS_URL"].rstrip("/") + "/api/v1/videos/stream"
+        with requests.get(url, params={"source": source, "token": self._login()}, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                for chunk in r.iter_content(1 << 16):
+                    f.write(chunk)
+        return path
 
     # ---------------------------------------------------------------- W&B inference
     def wandb_chat(self, prompt, timeout=60):

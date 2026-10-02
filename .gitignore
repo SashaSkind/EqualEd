@@ -18,3 +18,4 @@ bus.jpg
 *.app/
 .DS_Store
 vast.env
+archive_clips/
