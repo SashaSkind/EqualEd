@@ -85,8 +85,8 @@ return `<svg width=22 height=22 viewBox="0 0 24 24" fill=none stroke=currentColo
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function ini(n){return n.split(/[ .]+/).filter(Boolean).map(w=>w[0]).join('').slice(0,2).toUpperCase()}
 $('enable').onclick=async e=>{ctx=new (window.AudioContext||window.webkitAudioContext)();if(window.isSecureContext&&'Notification' in window){try{await Notification.requestPermission()}catch(_){}}e.target.textContent='Alerts on';e.target.classList.remove('primary')};
-function chime(){if(!ctx)return;[880,660,880].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;const t=ctx.currentTime+i*.22;
-g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.3,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+.5);o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+.6)});if(navigator.vibrate)navigator.vibrate([300,100,300])}
+function chime(){if(!ctx)return;[[523.25,0],[659.25,.28]].forEach(([f,dt])=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=f;const t=ctx.currentTime+dt;
+g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.14,t+.04);g.gain.exponentialRampToValueAtTime(.0001,t+1.4);o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+1.5)});if(navigator.vibrate)navigator.vibrate([120])}
 const PLAY=[
  {when:s=>s.overload||s.reactions.length,title:'Go to them calmly now',text:'Offer the break pass and headphones. Speak quietly, give space, no touch.',acc:['break pass','headphones','touch']},
  {when:s=>has(s,['dwell','too_close','crowd'])||s.busy>=55,title:'Give them space',text:'Ask nearby students to step back or return to their seats.',acc:['seating']},

@@ -3,25 +3,40 @@ import json, os, subprocess, threading, time, wave
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SOUND = os.path.join(HERE, "calm_sound.wav")
+SOUND = os.path.join(HERE, "calm_sound_v2.wav")
 ALLOW_SPEAKERS = False   # True = also play out loud on the laptop speakers
 
 
-def make_sound(path=SOUND, seconds=40, sr=44100):
-    """Soft ocean-like brown noise that slowly swells, under a quiet warm chord."""
+def make_sound(path=SOUND, seconds=48, sr=44100):
+    """A soft, warm pad of slow chords (C maj7, A min7, F maj7, G6) with a faint ocean under it.
+    Breathes in and out every 10 s to pace slow breathing. No high or sharp sounds; 6 s fade in/out."""
     rng = np.random.default_rng(7)
     n = seconds * sr
     t = np.arange(n) / sr
-    brown = np.cumsum(rng.standard_normal(n)); brown -= np.convolve(brown, np.ones(4410) / 4410, "same")
-    brown /= np.abs(brown).max() + 1e-9
-    swell = 0.55 + 0.45 * np.sin(2 * np.pi * t / 10.0)          # one slow wave every 10 s
-    chord = sum(np.sin(2 * np.pi * f * t) * a for f, a in ((220.0, .5), (277.18, .35), (329.63, .3), (110.0, .4)))
-    chord *= 0.5 + 0.5 * np.sin(2 * np.pi * t / 16.0)           # gentle breathing in and out
-    mix = 0.55 * brown * swell + 0.12 * chord
-    fade = np.minimum(1, np.minimum(t / 4.0, (seconds - t) / 4.0))
-    mix = mix * fade / (np.abs(mix).max() + 1e-9) * 0.5
-    left = mix; right = np.roll(mix, int(sr * 0.012))           # slight stereo width
-    data = (np.stack([left, right], 1) * 32767).astype(np.int16)
+    chords = [(130.81, 164.81, 196.00, 246.94), (110.00, 130.81, 164.81, 196.00),
+              (87.31, 110.00, 130.81, 164.81), (98.00, 123.47, 146.83, 164.81)]
+    seg = seconds / len(chords)
+    pad = np.zeros(n)
+    for i, ch in enumerate(chords):
+        center = (i + 0.5) * seg
+        w = np.clip(1 - np.abs(t - center) / (seg * 0.75), 0, 1)
+        w = 0.5 - 0.5 * np.cos(np.pi * w)                       # smooth crossfade between chords
+        tone = np.zeros(n)
+        for f in ch:
+            for det in (1.0, 1.003):                              # gentle chorus
+                tone += np.sin(2 * np.pi * f * det * t) + 0.25 * np.sin(4 * np.pi * f * det * t)
+        pad += w * tone
+    ocean = rng.standard_normal(n)
+    for k in (400, 200):                                          # heavy low-pass: a soft wash, no hiss
+        ocean = np.convolve(ocean, np.ones(k) / k, mode="same")
+    ocean /= np.abs(ocean).max() + 1e-9
+    ocean *= 0.5 + 0.5 * np.sin(2 * np.pi * t / 10.0 - np.pi / 2)  # waves in time with the breath
+    breath = 0.8 + 0.2 * np.sin(2 * np.pi * t / 10.0 - np.pi / 2)
+    mix = pad / (np.abs(pad).max() + 1e-9) * breath + 0.18 * ocean
+    fade = np.minimum(1, np.minimum(t / 6.0, (seconds - t) / 6.0))
+    mix = mix * fade
+    mix = mix / (np.abs(mix).max() + 1e-9) * 0.35                 # quiet
+    data = (np.stack([mix, np.roll(mix, int(sr * 0.008))], 1) * 32767).astype(np.int16)
     with wave.open(path, "wb") as w:
         w.setnchannels(2); w.setsampwidth(2); w.setframerate(sr); w.writeframes(data.tobytes())
 
@@ -61,7 +76,7 @@ class Calming:
             return self.output_name
         if not self.can_play():
             return None
-        self.proc = subprocess.Popen(["afplay", "-v", "0.7", SOUND])
+        self.proc = subprocess.Popen(["afplay", "-v", "0.6", SOUND])
         return self.output_name
 
     def can_play(self):
