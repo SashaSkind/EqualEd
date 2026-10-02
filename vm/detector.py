@@ -1,13 +1,12 @@
-"""Warehouse robot + personal-space detector (phase 1).
+"""Warehouse robot detector: personal space + sudden movement (phases 1–2).
 
 Detects:
   * people (YOLO11)
-  * humanoid robots (person boxes with teal/cyan chassis or thin dark metal body)
+  * humanoid robots (person boxes with teal/cyan chassis)
   * mobile platforms / AGVs (YOLOE open-vocab)
 
-For every robot, reports whether a person (or another agent) is inside its
-personal-space bubble. Distance is estimated in "body-heights" of the robot
-box — same flat-camera trick as the laptop sensory demo.
+Per robot: personal-space invasion (people inside bubble) and sudden movement
+(box center speed in body-lengths/sec). People also get a sudden-move flag.
 """
 from __future__ import annotations
 
@@ -28,6 +27,12 @@ DARK_FRAC = 0.40
 TRACK_IOU = 0.12
 TRACK_TTL = 3.0
 AGV_CONF = 0.40
+# sudden movement (body-lengths of subject size per second)
+SPEED_DT = 0.35
+SUDDEN_SPEED = 1.35            # fire when speed exceeds this
+SUDDEN_HOLD = 0.15
+SUDDEN_CLEAR = 0.5
+SUDDEN_COOLDOWN = 2.5
 AGV_NAMES = [
     "yellow AGV",
     "yellow robot platform",
@@ -86,6 +91,27 @@ def _dark_frac(crop_bgr):
     return float(mask.mean()) / 255.0
 
 
+def _sample_ago(hist, now, dt):
+    """Newest history item that is at least dt seconds old. Items are (t, box)."""
+    for item in reversed(hist):
+        if now - item[0] >= dt:
+            return item
+    return None
+
+
+def _box_speed(hist, now, dt=SPEED_DT):
+    """How fast the box center moves, in subject-sizes per second."""
+    if not hist:
+        return 0.0
+    old = _sample_ago(hist, now, dt)
+    if old is None:
+        return 0.0
+    t0, b0 = old
+    t1, b1 = hist[-1]
+    d = float(np.linalg.norm(_center(b1) - _center(b0)))
+    return d / _size(b1) / max(t1 - t0, 1e-3)
+
+
 @dataclass
 class Track:
     tid: int
@@ -100,6 +126,12 @@ class Track:
     closest: float | None = None
     closest_label: str = ""
     invasion_count: int = 0
+    speed: float = 0.0
+    sudden: bool = False
+    sudden_since: float | None = None
+    sudden_clear_since: float | None = None
+    sudden_count: int = 0
+    last_sudden_fire: float = -1e9
     hist: collections.deque = field(default_factory=lambda: collections.deque(maxlen=40))
 
 
@@ -308,6 +340,38 @@ class RobotSpaceDetector:
                     "detail": "personal space clear again",
                 })
 
+    def _update_motion(self, now):
+        """Sudden movement for every track (robots + people)."""
+        for tr in self.tracks.values():
+            tr.speed = _box_speed(tr.hist, now)
+            raw = tr.speed >= SUDDEN_SPEED
+            was = tr.sudden
+            if raw:
+                tr.sudden_clear_since = None
+                if tr.sudden_since is None:
+                    tr.sudden_since = now
+                if now - tr.sudden_since >= SUDDEN_HOLD:
+                    tr.sudden = True
+            else:
+                tr.sudden_since = None
+                if tr.sudden_clear_since is None:
+                    tr.sudden_clear_since = now
+                if now - tr.sudden_clear_since >= SUDDEN_CLEAR:
+                    tr.sudden = False
+            if tr.sudden and not was and now - tr.last_sudden_fire > SUDDEN_COOLDOWN:
+                tr.last_sudden_fire = now
+                tr.sudden_count += 1
+                who = f"{'R' if tr.kind == 'robot' else 'P'}{tr.tid}"
+                self.events.appendleft({
+                    "t": round(self.video_t, 2),
+                    "wall": time.strftime("%H:%M:%S"),
+                    "robot": who if tr.kind == "robot" else who,
+                    "agent": who,
+                    "subtype": tr.subtype,
+                    "kind": "sudden",
+                    "detail": f"sudden movement ({tr.speed:.1f} body-lengths/s)",
+                })
+
     # -------------------------------------------------------------- public
     def process(self, frame, video_t=None, now=None):
         self.frame_i += 1
@@ -318,6 +382,7 @@ class RobotSpaceDetector:
         dets = self._raw_detections(frame)
         self._match(dets, now)
         self._update_space(now)
+        self._update_motion(now)
         return self.state()
 
     def state(self):
@@ -335,9 +400,13 @@ class RobotSpaceDetector:
                 "closest": None if tr.closest is None else round(tr.closest, 2),
                 "closest_label": tr.closest_label,
                 "invasion_count": tr.invasion_count,
+                "speed": round(tr.speed, 2),
+                "sudden": bool(tr.sudden),
+                "sudden_count": tr.sudden_count,
             }
             (robots if tr.kind == "robot" else people).append(item)
         invaded_n = sum(1 for r in robots if r["invaded"])
+        sudden_n = sum(1 for a in robots + people if a["sudden"])
         return {
             "video_t": round(self.video_t, 2),
             "frame": self.frame_i,
@@ -348,11 +417,13 @@ class RobotSpaceDetector:
                 "people": len(people),
                 "invaded": invaded_n,
                 "clear": len(robots) - invaded_n,
+                "sudden": sudden_n,
             },
             "events": list(self.events)[:40],
             "thresholds": {
                 "personal_space_body_lengths": PERSONAL_SPACE,
                 "hold_s": HOLD_S,
+                "sudden_speed": SUDDEN_SPEED,
             },
         }
 
@@ -364,29 +435,35 @@ class RobotSpaceDetector:
         for tr in self.tracks.values():
             info = lookup.get(tr.tid, {})
             x1, y1, x2, y2 = map(int, tr.box)
+            sudden = bool(info.get("sudden"))
             if tr.kind == "robot":
                 invaded = bool(info.get("invaded"))
                 col = (0, 0, 230) if invaded else (0, 200, 80)
                 tag = f"R{tr.tid} {tr.subtype} · {'INVADED' if invaded else 'CLEAR'}"
                 if info.get("closest") is not None:
                     tag += f" ({info['closest']:.1f}bl)"
-                thick = 3 if invaded else 2
+                if sudden:
+                    tag += " · MOVE"
+                    col = (0, 140, 255) if not invaded else col
+                thick = 3 if invaded or sudden else 2
             else:
-                col, tag, thick = (220, 180, 60), f"P{tr.tid}", 2
+                col = (0, 140, 255) if sudden else (220, 180, 60)
+                tag = f"P{tr.tid}" + (" · MOVE" if sudden else "")
+                thick = 3 if sudden else 2
             cv2.rectangle(vis, (x1, y1), (x2, y2), col, thick)
             cv2.putText(vis, tag, (x1, max(y1 - 8, 16)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2, cv2.LINE_AA)
             if tr.kind == "robot":
-                # personal-space radius sketch (ellipse approx)
                 cx, cy = map(int, _center(tr.box))
                 rad = int(PERSONAL_SPACE * _size(tr.box) / 2)
                 cv2.circle(vis, (cx, cy), max(rad, 8), col, 1)
         banner = (f"robots {st['summary']['robots']}  "
                   f"invaded {st['summary']['invaded']}  "
                   f"clear {st['summary']['clear']}  "
+                  f"sudden {st['summary'].get('sudden', 0)}  "
                   f"people {st['summary']['people']}  "
                   f"t={st['video_t']:.1f}s")
         cv2.rectangle(vis, (0, 0), (vis.shape[1], 36), (20, 20, 20), -1)
-        cv2.putText(vis, banner, (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+        cv2.putText(vis, banner, (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
                     (240, 240, 240), 2, cv2.LINE_AA)
         return vis

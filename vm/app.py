@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""EqualEd VM app — warehouse robot personal-space dashboard (phase 1).
+"""EqualEd VM app — warehouse robot dashboard (personal space + sudden move + audio).
 
-Processes the Warehouse_017 camera clip, tracks robots, flags personal-space
-invasions, and serves a live status dashboard on http://0.0.0.0:8765/
+Processes the Warehouse_017 camera clip, tracks robots/people, flags personal-space
+invasions and sudden movement, watches for loud sounds when audio exists, and serves
+a live status dashboard on http://0.0.0.0:8765/
 
 Usage:
   python app.py                         # auto-find video, loop, serve dashboard
   python app.py --video /path/to.mp4
   python app.py --once --max-seconds 30 # smoke test, print summary JSON
   python app.py --selftest              # synthetic frames, no video needed
+  python app.py --mic                   # also try microphone if file has no audio
 """
 from __future__ import annotations
 
@@ -26,7 +28,8 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from detector import RobotSpaceDetector  # noqa: E402
+from audio_watch import AudioWatch  # noqa: E402
+from detector import RobotSpaceDetector, SUDDEN_SPEED, Track  # noqa: E402
 
 PORT = int(os.environ.get("PORT", "8765"))
 VIDEO_PREFIX = "20261001_080730_test_Wherehouse_017_Camera_chunck_00"
@@ -85,7 +88,7 @@ def find_video(explicit: str | None = None) -> Path:
 DASHBOARD = r"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EqualEd · Robot personal space</title>
+<title>EqualEd · Warehouse shield</title>
 <style>
 :root{
   --bg:#0e1412; --panel:#15201c; --ink:#e8f0ea; --muted:#8aa396;
@@ -105,7 +108,7 @@ header{padding:18px 22px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:en
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font:12.5px var(--mono)}
 .chip b{color:var(--accent)}
-.chip.bad b{color:var(--bad)}.chip.ok b{color:var(--ok)}
+.chip.bad b{color:var(--bad)}.chip.ok b{color:var(--ok)}.chip.warn b{color:var(--warn)}
 main{padding:8px 22px 28px;display:grid;grid-template-columns:1.3fr .9fr;gap:16px}
 @media(max-width:960px){main{grid-template-columns:1fr}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
@@ -113,7 +116,7 @@ main{padding:8px 22px 28px;display:grid;grid-template-columns:1.3fr .9fr;gap:16p
 .stage{position:relative;background:#0a0f0d;aspect-ratio:16/9}
 .stage img{width:100%;height:100%;object-fit:contain;display:block;background:#000}
 .meta{padding:10px 14px;font:12px var(--mono);color:var(--muted);border-top:1px solid var(--line)}
-.list{padding:8px 10px;max-height:420px;overflow:auto}
+.list{padding:8px 10px;max-height:360px;overflow:auto}
 .row{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;
   padding:10px 8px;border-bottom:1px solid var(--line)}
 .row:last-child{border:0}
@@ -121,19 +124,27 @@ main{padding:8px 22px 28px;display:grid;grid-template-columns:1.3fr .9fr;gap:16p
 .badge.invaded{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}
 .badge.clear{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
 .badge.person{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.badge.sudden{background:color-mix(in srgb,#ff8a3d 22%,transparent);color:#ffb07a}
+.badge.quiet{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--muted)}
+.badge.loud{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}
 .name{font-weight:600}.detail{font-size:12.5px;color:var(--muted);margin-top:2px}
 .ev{padding:8px 14px;border-bottom:1px solid var(--line);font-size:13px}
 .ev .t{font:11.5px var(--mono);color:var(--muted)}
 .ev .tag{display:inline-block;font:10.5px var(--mono);padding:1px 6px;border-radius:4px;margin-right:6px}
 .ev .tag.invasion{background:color-mix(in srgb,var(--bad) 25%,transparent);color:var(--bad)}
 .ev .tag.clear{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
+.ev .tag.sudden{background:color-mix(in srgb,#ff8a3d 25%,transparent);color:#ffb07a}
+.ev .tag.loud{background:color-mix(in srgb,var(--bad) 25%,transparent);color:var(--bad)}
+.audio-box{padding:14px;display:grid;gap:8px}
+.audio-box .big{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .empty{padding:18px;color:var(--muted)}
 footer{padding:0 22px 24px;color:var(--muted);font-size:12.5px}
+.stack{display:flex;flex-direction:column;gap:16px}
 </style></head><body>
 <header>
   <div>
     <div class="brand">equal<span>Ed</span> · warehouse shield</div>
-    <div class="sub">Phase 1 — live personal-space status per robot</div>
+    <div class="sub">Personal space · sudden movement · loud noise</div>
   </div>
   <div class="chips" id="chips"></div>
 </header>
@@ -143,10 +154,18 @@ footer{padding:0 22px 24px;color:var(--muted);font-size:12.5px}
     <div class="stage"><img id="frame" alt="live frame"></div>
     <div class="meta" id="meta">waiting for frames…</div>
   </section>
-  <div style="display:flex;flex-direction:column;gap:16px">
+  <div class="stack">
+    <section class="panel">
+      <h2>Audio</h2>
+      <div class="audio-box" id="audio"><div class="empty">Checking audio…</div></div>
+    </section>
     <section class="panel">
       <h2>Robots</h2>
       <div class="list" id="robots"><div class="empty">No robots yet</div></div>
+    </section>
+    <section class="panel">
+      <h2>Moving agents</h2>
+      <div class="list" id="sudden" style="max-height:180px"><div class="empty">No sudden movement</div></div>
     </section>
     <section class="panel">
       <h2>Recent events</h2>
@@ -154,19 +173,38 @@ footer{padding:0 22px 24px;color:var(--muted);font-size:12.5px}
     </section>
   </div>
 </main>
-<footer>Personal space = center distance &lt; 1.15× robot height (flat-camera estimate). Phase 2 will add sudden movement + loud-noise alerts.</footer>
+<footer>Personal space &lt; 1.15× robot size. Sudden move ≥ speed threshold in body-lengths/s. Loud noise needs an audio track or --mic.</footer>
 <script>
 const $ = id => document.getElementById(id);
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
 function chips(S){
-  const s=S.summary||{};
+  const s=S.summary||{}, a=S.audio||{};
+  const audioChip = !a.has_audio
+    ? `<div class="chip warn">audio <b>none</b></div>`
+    : `<div class="chip ${a.alerting?'bad':'ok'}">audio <b>${a.alerting?'LOUD':Math.round(a.db)+' dB'}</b></div>`;
   $('chips').innerHTML = `
     <div class="chip">t <b>${esc(S.video_t)}s</b></div>
     <div class="chip">robots <b>${s.robots||0}</b></div>
     <div class="chip bad">invaded <b>${s.invaded||0}</b></div>
     <div class="chip ok">clear <b>${s.clear||0}</b></div>
+    <div class="chip warn">sudden <b>${s.sudden||0}</b></div>
     <div class="chip">people <b>${s.people||0}</b></div>
+    ${audioChip}
     <div class="chip">fps <b>${esc(S.fps||0)}</b></div>`;
+}
+function audioPanel(S){
+  const a=S.audio||{};
+  if(!a.has_audio){
+    $('audio').innerHTML = `<div class="badge quiet">no audio track</div>
+      <div class="big" style="color:var(--warn)">No audio</div>
+      <div class="detail">${esc(a.reason||'no audio track')}</div>
+      <div class="detail">${esc(a.hint||'')}</div>`;
+    return;
+  }
+  $('audio').innerHTML = `<div class="badge ${a.alerting?'loud':'clear'}">${a.alerting?'loud':'listening'}</div>
+    <div class="big">${Math.round(a.db)} dB <span class="detail">via ${esc(a.source)}</span></div>
+    <div class="detail">${esc(a.label?('Hearing: '+a.label):'baseline '+a.baseline+' dB')}</div>
+    <div class="detail">${esc(a.last_event||'')}</div>`;
 }
 function robots(S){
   const rows=(S.robots||[]);
@@ -174,25 +212,37 @@ function robots(S){
   $('robots').innerHTML = rows.map(r=>{
     const st=r.invaded?'invaded':'clear';
     const near=r.closest!=null?`nearest ${esc(r.closest_label)} · ${r.closest} body-lengths`:'no neighbour measured';
+    const move=r.sudden?` · <span style="color:#ffb07a">sudden ${r.speed}</span>`:` · speed ${r.speed||0}`;
     return `<div class="row"><div class="badge ${st}">${st}</div>
       <div><div class="name">${esc(r.label)} · ${esc(r.subtype)}</div>
-      <div class="detail">${near} · invasions ×${r.invasion_count}</div></div>
+      <div class="detail">${near}${move} · invasions ×${r.invasion_count}</div></div>
       <div class="detail">${Math.round((r.conf||0)*100)}%</div></div>`;
   }).join('');
 }
+function sudden(S){
+  const rows=[...(S.robots||[]),...(S.people||[])].filter(a=>a.sudden);
+  if(!rows.length){$('sudden').innerHTML='<div class="empty">No sudden movement right now</div>';return;}
+  $('sudden').innerHTML = rows.map(a=>`<div class="row"><div class="badge sudden">sudden</div>
+    <div><div class="name">${esc(a.label)} · ${esc(a.subtype)}</div>
+    <div class="detail">${a.speed} body-lengths/s · fires ×${a.sudden_count||0}</div></div>
+    <div class="detail"></div></div>`).join('');
+}
 function events(S){
   const ev=S.events||[];
-  if(!ev.length){$('events').innerHTML='<div class="empty">No invasions yet</div>';return;}
-  $('events').innerHTML = ev.slice(0,25).map(e=>`<div class="ev">
+  if(!ev.length){$('events').innerHTML='<div class="empty">Nothing yet</div>';return;}
+  $('events').innerHTML = ev.slice(0,25).map(e=>{
+    const who=esc(e.robot||e.agent||'');
+    return `<div class="ev">
     <div class="t">${esc(e.wall)} · video ${esc(e.t)}s</div>
     <div><span class="tag ${esc(e.kind)}">${esc(e.kind)}</span>
-      <b>${esc(e.robot)}</b> ${esc(e.detail)}</div></div>`).join('');
+      <b>${who}</b> ${esc(e.detail)}</div></div>`;
+  }).join('');
 }
 async function tick(){
   try{
     const r=await fetch('/api/state',{cache:'no-store'});
     const S=await r.json();
-    chips(S); robots(S); events(S);
+    chips(S); audioPanel(S); robots(S); sudden(S); events(S);
     $('meta').textContent = `${S.video||''} · frame ${S.frame} · playing=${S.playing}`;
     $('frame').src = '/api/frame.jpg?ts='+Date.now();
   }catch(e){}
@@ -207,8 +257,9 @@ class AppState:
         self.lock = threading.Lock()
         self.state = {
             "video_t": 0, "frame": 0, "robots": [], "people": [],
-            "summary": {"robots": 0, "people": 0, "invaded": 0, "clear": 0},
-            "events": [], "fps": 0, "playing": False, "video": "",
+            "summary": {"robots": 0, "people": 0, "invaded": 0, "clear": 0, "sudden": 0},
+            "events": [], "audio": {"has_audio": False, "reason": "starting"},
+            "fps": 0, "playing": False, "video": "",
         }
         self.jpeg = self._placeholder_jpeg("starting…")
 
@@ -284,11 +335,21 @@ def pick_device():
     return "cpu"
 
 
-def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False):
+def merge_events(det_events, audio_events):
+    """Interleave detector + audio events by video timestamp (newest first)."""
+    merged = list(det_events) + list(audio_events)
+    merged.sort(key=lambda e: float(e.get("t", 0)), reverse=True)
+    return merged[:40]
+
+
+def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False, use_mic=False):
     device = pick_device()
     log("device:", device)
     log("loading models (first run downloads weights)…")
     det = RobotSpaceDetector(device=device)
+    log("probing audio…")
+    audio = AudioWatch(path, use_mic=use_mic)
+    log("audio:", audio.state()["source"], audio.state()["reason"] or "ok")
     log("video:", path)
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
@@ -318,13 +379,23 @@ def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False):
             break
 
         t0 = time.time()
-        # downscale for speed on CPU
         h, w = frame.shape[:2]
         if w > 1280:
             scale = 1280 / w
             frame = cv2.resize(frame, (1280, int(h * scale)))
         st = det.process(frame, video_t=video_t)
+        audio.update(video_t)
+        astate = audio.state()
+        st["audio"] = astate
+        st["events"] = merge_events(st.get("events", []), astate.get("events", []))
         vis = det.annotate(frame, st)
+        # audio banner strip
+        if not astate.get("has_audio"):
+            cv2.putText(vis, "AUDIO: no track", (12, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                        (0, 180, 255), 2, cv2.LINE_AA)
+        elif astate.get("alerting"):
+            cv2.putText(vis, f"LOUD: {astate.get('last_event') or astate.get('db')}", (12, 58),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2, cv2.LINE_AA)
         dt = time.time() - t0
         inst = 1.0 / max(dt, 1e-6)
         fps_ema = inst if processed == 0 else (0.9 * fps_ema + 0.1 * inst)
@@ -332,24 +403,29 @@ def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False):
         SHARED.publish(st, vis, path.name, fps_ema, playing)
         if processed % 20 == 0:
             inv = [r["label"] for r in st["robots"] if r["invaded"]]
+            sud = [a["label"] for a in st["robots"] + st["people"] if a.get("sudden")]
             log(f"t={video_t:6.1f}s robots={st['summary']['robots']} "
                 f"invaded={st['summary']['invaded']}{(' '+str(inv)) if inv else ''} "
-                f"people={st['summary']['people']} fps={fps_ema:.1f}")
+                f"sudden={st['summary'].get('sudden',0)}{(' '+str(sud)) if sud else ''} "
+                f"audio={'yes' if astate.get('has_audio') else 'none'} fps={fps_ema:.1f}")
         if show:
             cv2.imshow("equalEd warehouse", vis)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
     st = det.state()
+    astate = audio.state()
+    st["audio"] = astate
+    st["events"] = merge_events(st.get("events", []), astate.get("events", []))
     with SHARED.lock:
         SHARED.state = dict(st, fps=round(fps_ema, 1), playing=False, video=path.name)
+    audio.close()
     log(f"done. processed={processed} wall={time.time()-t_wall0:.1f}s")
     return st
 
 
 def selftest():
-    """Synthetic scene: two robots, one person walking into space."""
-    # Skip YOLO weight load — only exercise tracking geometry.
+    """Synthetic: personal space + sudden movement + no-audio state."""
     det = RobotSpaceDetector.__new__(RobotSpaceDetector)
     det.device = "cpu"
     det.tracks = {}
@@ -359,26 +435,49 @@ def selftest():
     det.video_t = 1.0
     det.fps_est = 0.0
     now = time.time()
-    from detector import Track
 
     det.tracks[1] = Track(1, "robot", "humanoid-teal", np.array([100, 100, 160, 280], float), 0.9, now)
     det.tracks[2] = Track(2, "robot", "agv", np.array([500, 200, 620, 280], float), 0.8, now)
     det.tracks[3] = Track(3, "person", "person", np.array([400, 180, 460, 320], float), 0.9, now)
+    for tr in det.tracks.values():
+        tr.hist.append((now, tr.box.copy()))
     det._update_space(now)
-    # move person next to robot 1 and hold past HOLD_S
-    det.tracks[3].box = np.array([120, 120, 180, 300], float)
+    # invade — close but not overlapping the robot box (IoU would look like same body)
+    det.tracks[3].box = np.array([175, 110, 235, 290], float)
+    det.tracks[3].hist.append((now + 0.1, det.tracks[3].box.copy()))
     det._update_space(now + 0.1)
     det._update_space(now + 0.5)
+    assert any(r["invaded"] for r in det.state()["robots"]), det.state()
+    # sudden move: jump person far in short time
+    det.tracks[3].box = np.array([500, 120, 560, 300], float)
+    det.tracks[3].hist.append((now + 0.6, det.tracks[3].box.copy()))
+    det.video_t = 2.0
+    det._update_motion(now + 0.6)
+    det._update_motion(now + 0.85)
     st = det.state()
-    assert any(r["invaded"] for r in st["robots"]), st
     assert any(e["kind"] == "invasion" for e in st["events"]), st
-    print(json.dumps({"summary": st["summary"], "robots": st["robots"], "events": st["events"][:3]}, indent=2))
+    assert st["summary"].get("sudden", 0) >= 1 or any(e["kind"] == "sudden" for e in st["events"]), st
+
+    aw = AudioWatch(video_path=None, use_mic=False)
+    # pretend probing a known no-audio path
+    aw.has_audio = False
+    aw.source = "none"
+    aw.reason = "no audio track"
+    a = aw.state()
+    assert a["has_audio"] is False and "no audio" in a["reason"]
+
+    print(json.dumps({
+        "summary": st["summary"],
+        "robots": st["robots"],
+        "events": st["events"][:5],
+        "audio": a,
+    }, indent=2))
     print("selftest ok")
     return st
 
 
 def main():
-    ap = argparse.ArgumentParser(description="EqualEd VM warehouse personal-space dashboard")
+    ap = argparse.ArgumentParser(description="EqualEd VM warehouse dashboard")
     ap.add_argument("--video", help="path to warehouse mp4")
     ap.add_argument("--port", type=int, default=PORT)
     ap.add_argument("--once", action="store_true", help="do not loop the video")
@@ -386,6 +485,7 @@ def main():
     ap.add_argument("--stride", type=int, default=2, help="process every Nth frame")
     ap.add_argument("--no-server", action="store_true")
     ap.add_argument("--show", action="store_true", help="OpenCV window (needs display)")
+    ap.add_argument("--mic", action="store_true", help="use microphone if file has no audio")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--download-sample", action="store_true",
                     help="fetch Warehouse_017 Camera.mp4 into /workspace/data/")
@@ -412,17 +512,17 @@ def main():
 
     path = find_video(args.video)
     st = run_video(path, loop=not args.once, max_seconds=args.max_seconds,
-                   stride=max(1, args.stride), show=args.show)
+                   stride=max(1, args.stride), show=args.show, use_mic=args.mic)
     if args.once or args.max_seconds:
         print(json.dumps({
             "video": str(path),
             "summary": st["summary"],
+            "audio": st.get("audio"),
             "robots": st["robots"],
-            "events_head": st["events"][:10],
+            "events_head": st["events"][:12],
         }, indent=2))
         return
 
-    # keep server alive while looping finished? run_video loops forever unless --once
     log("idle — dashboard still serving last state. Ctrl+C to quit.")
     while True:
         time.sleep(3600)
