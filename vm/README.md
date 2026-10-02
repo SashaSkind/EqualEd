@@ -1,7 +1,8 @@
-# EqualEd VM app — warehouse robot personal space
+# EqualEd VM app — warehouse robot shield
 
-Phase 1: detect robots in the warehouse clip, decide whether each robot's
-personal space is invaded, and show a live status dashboard.
+Phases 1–2: detect robots in the warehouse clip, flag **personal-space invasions**
+and **sudden movement**, watch for **loud sounds** when audio exists, and show a
+live status dashboard.
 
 ## Video
 
@@ -13,16 +14,13 @@ Looks for a file whose name starts with:
 
 Default search paths: `/workspace/data/`, `vm/data/`, `/data`, `./data`.
 
-If you do not have the clip locally (it is the NVIDIA PhysicalAI-SmartSpaces
-`Warehouse_017` camera export), fetch it:
-
 ```bash
 cd /workspace
 .venv/bin/python vm/app.py --download-sample
 # saves /workspace/data/20261001_080730_test_Wherehouse_017_Camera_chunck_00.mp4
 ```
 
-Do **not** commit the mp4.
+Do **not** commit the mp4. This Warehouse_017 camera export has **no audio track**.
 
 ## Setup
 
@@ -45,40 +43,45 @@ cd /workspace
 Useful flags:
 
 ```bash
-# smoke test first 45s of video, print JSON summary, no loop
+# smoke test first 45s, print JSON, no loop
 .venv/bin/python vm/app.py --once --max-seconds 45 --stride 3
 
-# geometry unit test (no video / no GPU)
+# geometry + audio-state unit test
 .venv/bin/python vm/app.py --selftest
 
-# custom path / port
-.venv/bin/python vm/app.py --video /path/to/clip.mp4 --port 8765
+# custom path / port / try mic when file has no audio
+.venv/bin/python vm/app.py --video /path/to/clip.mp4 --port 8765 --mic
 ```
 
-## What it shows
+## Dashboard panels
 
-- Per-robot row: **invaded** / **clear**, subtype (`humanoid-teal` / `agv` / …),
-  nearest person distance in body-lengths, invasion count
-- Annotated camera frame with personal-space circles
-- Event log when space flips invaded ↔ clear
+| Panel | Shows |
+|---|---|
+| Annotated camera | Boxes, personal-space circles, MOVE tags |
+| Audio | **No audio track** for this clip, or dB / loud alert when audio exists |
+| Robots | invaded / clear + nearest person + speed |
+| Moving agents | agents currently over the sudden-move threshold |
+| Events | invasion, clear, sudden, loud |
 
-## How detection works
+## Detection notes
 
-| Agent | How |
+| Agent / cue | How |
 |---|---|
 | People | YOLO11n `person` |
-| Teal humanoid robots | person boxes with cyan/teal chassis pixels |
-| Dark humanoid robots | tall, dark metal person boxes |
-| Yellow AGVs / platforms | YOLOE open-vocab (`yellow AGV`, …) |
+| Teal humanoids | person boxes with cyan chest-plate pixels |
+| Yellow AGVs | YOLOE open-vocab |
+| Personal space | person center &lt; **1.15 × robot size** |
+| Sudden movement | box-center speed ≥ **1.35 body-lengths/s** |
+| Loud noise | file audio (ffmpeg) or `--mic`; loudness jump (+ optional YAMNet) |
 
-Personal space (same flat-camera idea as the laptop sensory demo): a person
-invades when center distance &lt; **1.15 × robot box height**, with a short hold
-to avoid flicker.
+### Testing loud noise on a clip *with* audio
 
-## Phase 2 (not in this pass)
-
-Sudden movement, loud-noise / audio distress, and other classroom alerts —
-wire into the same `/api/state` + dashboard once phase 1 is solid.
+```bash
+# any mp4/mov that ffprobe shows an audio stream
+.venv/bin/python vm/app.py --video /path/to/clip_with_sound.mp4 --once --max-seconds 20
+# or fall back to microphone when the file has none:
+.venv/bin/python vm/app.py --mic
+```
 
 ## Layout note
 
