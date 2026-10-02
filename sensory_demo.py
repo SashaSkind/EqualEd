@@ -101,9 +101,9 @@ TRIGGER_DEFS = [
     ("dwell", "Someone staying close", True, 0.0),
 ]
 RESPONSE_DEFS = [
-    ("ears", "Covering ears", 0.4),
+    ("ears", "Covering ears", 0.6),
     ("head_down", "Head down", 1.0),
-    ("rocking", "Rocking", 0.0),
+    ("rocking", "Rocking", 2.0),
 ]
 
 
@@ -250,7 +250,7 @@ def _flips(sig, min_p2p):
     den = float(np.dot(z, z)) or 1e-9
     lags = range(6, min(60, len(z) // 2))
     best = max((float(np.dot(z[:-L], z[L:])) / den * len(z) / (len(z) - L) for L in lags), default=0.0)
-    if best < 0.6:
+    if best < 0.7:
         return 0, p2p
     return flips, p2p
 
@@ -272,6 +272,12 @@ def rocking_score(tr, now, window=5.0):
     best, info = 0, {}
     if len(head["size"]) >= 12:
         scale = float(np.median(head["size"]))
+        k5 = max(3, len(head["x"]) // 5)
+        drift = max(abs(np.mean(head["x"][-k5:]) - np.mean(head["x"][:k5])),
+                    abs(np.mean(head["y"][-k5:]) - np.mean(head["y"][:k5]))) / scale
+        info["drift"] = round(float(drift), 2)
+        if drift > 1.2:            # the student moved somewhere else: shifting/moving around, not rocking in place
+            return 0, info
         for name, sig, mp in (("head side-to-side", np.array(head["x"]) / scale, 0.9),
                               ("head up-and-down", np.array(head["y"]) / scale, 0.9),
                               ("toward/away", np.array(head["size"]) / scale, 0.12)):
@@ -883,16 +889,14 @@ class Demo:
                 ok_w = c[wr] > 0.3 and ear_pts
                 dist = min(np.linalg.norm(k[wr] - e) for e in ear_pts) / sw if ok_w else None
                 raised = sh_y is None or k[wr][1] < sh_y[1] - 0.05 * sw
-                if ok_w and ((raised and dist < 0.75) or dist < 0.45):
+                ear_y = min(e[1] for e in ear_pts) if ear_pts else None
+                at_ear_height = ear_y is not None and k[wr][1] <= ear_y + 0.35 * sw   # chin/jaw rests sit lower
+                if ok_w and dist < 0.75 and at_ear_height:
                     hands += 1
                 wrist_info.append({"conf": round(float(c[wr]), 2), "dist_to_ear": None if dist is None else round(float(dist), 2),
                                    "raised": bool(raised)})
             self.ear_debug = {"hands": hands, "wrists": wrist_info, "ears_seen": int(sum(c[i] > 0.3 for i in (L_EAR, R_EAR)))}
-            if hands == 1:
-                self.one_hand_since = self.one_hand_since or now
-            else:
-                self.one_hand_since = None
-            ears = hands >= 2 or (hands == 1 and now - self.one_hand_since >= 2.5)
+            ears = hands >= 2      # both hands at the ears; one hand on the face is usually a chin rest
             resp_state["ears"] = (ears, f"hands at ears: {hands}")
             shm = mean_pt(k, c, (L_SH, R_SH))
             if shm is not None and c[NOSE] > KP_OK:
@@ -900,7 +904,7 @@ class Demo:
                 resp_state["head_down"] = (gap < 0.15, f"nose above shoulders: {gap:.2f}")
             rs, rinfo = rocking_score(tr, now)
             self.rock_debug = rinfo
-            resp_state["rocking"] = (rs >= 5, f"steady back-and-forth swings: {rs}")
+            resp_state["rocking"] = (rs >= 6, f"steady back-and-forth swings: {rs}")
         for key, (active, val) in resp_state.items():
             r = self.resp[key]
             if r.update(active, now, val):
