@@ -5,8 +5,10 @@ Detects:
   * humanoid robots (person boxes with teal/cyan chassis)
   * mobile platforms / AGVs (YOLOE open-vocab)
 
-Per robot: personal-space invasion (people inside bubble) and sudden movement
-(box center speed in body-lengths/sec). People also get a sudden-move flag.
+Per humanoid robot: personal-space invasion (people or AGVs inside its bubble).
+AGVs can intrude on a humanoid but have no personal space of their own, so they
+are never "invaded". Every track gets a sudden-movement flag (box center speed in
+body-lengths/sec).
 """
 from __future__ import annotations
 
@@ -280,17 +282,21 @@ class RobotSpaceDetector:
 
     # -------------------------------------------------------------- space
     def _update_space(self, now):
-        robots = [t for t in self.tracks.values() if t.kind == "robot"]
+        humanoids = [t for t in self.tracks.values() if t.kind == "robot" and t.subtype != "agv"]
         people = [t for t in self.tracks.values() if t.kind == "person"]
-        # Phase 1: personal space is invaded by people (not other robots).
-        others_by_robot = people
+        agvs = [t for t in self.tracks.values() if t.kind == "robot" and t.subtype == "agv"]
+        intruders = people + agvs
 
-        for rob in robots:
+        for agv in agvs:
+            agv.invaded, agv.invaded_since, agv.clear_since = False, None, None
+            agv.closest, agv.closest_label = None, ""
+
+        for rob in humanoids:
             th = _size(rob.box)
             rc = _center(rob.box)
             closest, closest_label = None, ""
             invaded_raw = False
-            for p in others_by_robot:
+            for p in intruders:
                 # same physical body tracked twice — ignore
                 if _iou(rob.box, p.box) > 0.4:
                     continue
@@ -299,7 +305,7 @@ class RobotSpaceDetector:
                     continue
                 d = float(np.linalg.norm(_center(p.box) - rc)) / th
                 if closest is None or d < closest:
-                    closest, closest_label = d, f"person-{p.tid}"
+                    closest, closest_label = d, (f"agv-{p.tid}" if p.subtype == "agv" else f"person-{p.tid}")
                 if d < PERSONAL_SPACE:
                     invaded_raw = True
 
@@ -388,6 +394,13 @@ class RobotSpaceDetector:
     def state(self):
         robots, people = [], []
         for tr in sorted(self.tracks.values(), key=lambda t: t.tid):
+            is_agv = tr.kind == "robot" and tr.subtype == "agv"
+            if tr.kind != "robot":
+                status = "person"
+            elif is_agv:
+                status = "agv"
+            else:
+                status = "invaded" if tr.invaded else "clear"
             item = {
                 "id": tr.tid,
                 "label": f"{'R' if tr.kind == 'robot' else 'P'}{tr.tid}",
@@ -395,8 +408,8 @@ class RobotSpaceDetector:
                 "subtype": tr.subtype,
                 "conf": round(tr.conf, 2),
                 "box": [round(float(x), 1) for x in tr.box.tolist()],
-                "invaded": bool(tr.invaded) if tr.kind == "robot" else None,
-                "status": ("invaded" if tr.invaded else "clear") if tr.kind == "robot" else "person",
+                "invaded": bool(tr.invaded) if tr.kind == "robot" and not is_agv else None,
+                "status": status,
                 "closest": None if tr.closest is None else round(tr.closest, 2),
                 "closest_label": tr.closest_label,
                 "invasion_count": tr.invasion_count,
@@ -406,6 +419,7 @@ class RobotSpaceDetector:
             }
             (robots if tr.kind == "robot" else people).append(item)
         invaded_n = sum(1 for r in robots if r["invaded"])
+        humanoid_n = sum(1 for r in robots if r["status"] != "agv")
         sudden_n = sum(1 for a in robots + people if a["sudden"])
         return {
             "video_t": round(self.video_t, 2),
@@ -415,8 +429,9 @@ class RobotSpaceDetector:
             "summary": {
                 "robots": len(robots),
                 "people": len(people),
+                "agvs": len(robots) - humanoid_n,
                 "invaded": invaded_n,
-                "clear": len(robots) - invaded_n,
+                "clear": humanoid_n - invaded_n,
                 "sudden": sudden_n,
             },
             "events": list(self.events)[:40],
@@ -436,7 +451,12 @@ class RobotSpaceDetector:
             info = lookup.get(tr.tid, {})
             x1, y1, x2, y2 = map(int, tr.box)
             sudden = bool(info.get("sudden"))
-            if tr.kind == "robot":
+            is_agv = tr.kind == "robot" and tr.subtype == "agv"
+            if is_agv:
+                col = (0, 140, 255) if sudden else (0, 200, 230)
+                tag = f"R{tr.tid} agv" + (" · MOVE" if sudden else "")
+                thick = 3 if sudden else 2
+            elif tr.kind == "robot":
                 invaded = bool(info.get("invaded"))
                 col = (0, 0, 230) if invaded else (0, 200, 80)
                 tag = f"R{tr.tid} {tr.subtype} · {'INVADED' if invaded else 'CLEAR'}"
@@ -453,11 +473,11 @@ class RobotSpaceDetector:
             cv2.rectangle(vis, (x1, y1), (x2, y2), col, thick)
             cv2.putText(vis, tag, (x1, max(y1 - 8, 16)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2, cv2.LINE_AA)
-            if tr.kind == "robot":
+            if tr.kind == "robot" and not is_agv:
                 cx, cy = map(int, _center(tr.box))
                 rad = int(PERSONAL_SPACE * _size(tr.box) / 2)
                 cv2.circle(vis, (cx, cy), max(rad, 8), col, 1)
-        banner = (f"robots {st['summary']['robots']}  "
+        banner = (f"robots {st['summary']['robots']} (agv {st['summary'].get('agvs', 0)})  "
                   f"invaded {st['summary']['invaded']}  "
                   f"clear {st['summary']['clear']}  "
                   f"sudden {st['summary'].get('sudden', 0)}  "

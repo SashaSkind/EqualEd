@@ -28,7 +28,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from audio_watch import AudioWatch  # noqa: E402
+from audio_watch import AudioWatch, LoudnessEngine  # noqa: E402
 from detector import RobotSpaceDetector, SUDDEN_SPEED, Track  # noqa: E402
 
 PORT = int(os.environ.get("PORT", "8765"))
@@ -124,6 +124,7 @@ main{padding:8px 22px 28px;display:grid;grid-template-columns:1.3fr .9fr;gap:16p
 .badge.invaded{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}
 .badge.clear{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
 .badge.person{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.badge.agv{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
 .badge.sudden{background:color-mix(in srgb,#ff8a3d 22%,transparent);color:#ffb07a}
 .badge.quiet{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--muted)}
 .badge.loud{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}
@@ -173,7 +174,7 @@ footer{padding:0 22px 24px;color:var(--muted);font-size:12.5px}
     </section>
   </div>
 </main>
-<footer>Personal space &lt; 1.15× robot size. Sudden move ≥ speed threshold in body-lengths/s. Loud noise needs an audio track or --mic.</footer>
+<footer>Humanoid personal space &lt; 1.15× robot size; people and AGVs can intrude, AGVs have no personal space. Sudden move ≥ speed threshold in body-lengths/s. Loud noise needs an audio track or --mic.</footer>
 <script>
 const $ = id => document.getElementById(id);
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
@@ -185,6 +186,7 @@ function chips(S){
   $('chips').innerHTML = `
     <div class="chip">t <b>${esc(S.video_t)}s</b></div>
     <div class="chip">robots <b>${s.robots||0}</b></div>
+    <div class="chip">agv <b>${s.agvs||0}</b></div>
     <div class="chip bad">invaded <b>${s.invaded||0}</b></div>
     <div class="chip ok">clear <b>${s.clear||0}</b></div>
     <div class="chip warn">sudden <b>${s.sudden||0}</b></div>
@@ -210,6 +212,13 @@ function robots(S){
   const rows=(S.robots||[]);
   if(!rows.length){$('robots').innerHTML='<div class="empty">No robots in view</div>';return;}
   $('robots').innerHTML = rows.map(r=>{
+    if(r.status==='agv'){
+      const mv=r.sudden?`<span style="color:#ffb07a">sudden ${r.speed}</span>`:`speed ${r.speed||0}`;
+      return `<div class="row"><div class="badge agv">agv</div>
+        <div><div class="name">${esc(r.label)} · agv</div>
+        <div class="detail">can intrude on humanoids · no personal space · ${mv}</div></div>
+        <div class="detail">${Math.round((r.conf||0)*100)}%</div></div>`;
+    }
     const st=r.invaded?'invaded':'clear';
     const near=r.closest!=null?`nearest ${esc(r.closest_label)} · ${r.closest} body-lengths`:'no neighbour measured';
     const move=r.sudden?` · <span style="color:#ffb07a">sudden ${r.speed}</span>`:` · speed ${r.speed||0}`;
@@ -425,7 +434,7 @@ def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False, 
 
 
 def selftest():
-    """Synthetic: personal space + sudden movement + no-audio state."""
+    """Synthetic: personal space (people + AGVs intrude) + sudden movement + loudness baseline + no-audio state."""
     det = RobotSpaceDetector.__new__(RobotSpaceDetector)
     det.device = "cpu"
     det.tracks = {}
@@ -457,6 +466,27 @@ def selftest():
     st = det.state()
     assert any(e["kind"] == "invasion" for e in st["events"]), st
     assert st["summary"].get("sudden", 0) >= 1 or any(e["kind"] == "sudden" for e in st["events"]), st
+
+    # AGV next to the humanoid invades it; person right next to the AGV does not invade the AGV
+    det.tracks[2].box = np.array([190, 230, 290, 290], float)
+    det.tracks[3].box = np.array([300, 200, 360, 340], float)
+    det._update_space(now + 1.0)
+    det._update_space(now + 1.5)
+    st = det.state()
+    r1 = next(r for r in st["robots"] if r["id"] == 1)
+    r2 = next(r for r in st["robots"] if r["id"] == 2)
+    assert r1["invaded"] and r1["closest_label"] == "agv-2", r1
+    assert r2["status"] == "agv" and r2["invaded"] is None and r2["invasion_count"] == 0, r2
+    assert st["summary"]["agvs"] == 1 and st["summary"]["clear"] + st["summary"]["invaded"] == 1, st["summary"]
+
+    # steady street noise (~-24 dB) must not alert; a sharp burst on top of it must
+    rng = np.random.default_rng(0)
+    eng = LoudnessEngine()
+    for i in range(40):
+        eng.feed(rng.normal(0, 0.063, 4000).astype(np.float32), now=now + i * 0.1)
+    assert not eng.loud_event(now + 4.0)[0], (eng.db, eng.baseline)
+    eng.feed(rng.normal(0, 0.7, 4000).astype(np.float32), now=now + 4.1)
+    assert eng.loud_event(now + 4.15)[0], (eng.db, eng.baseline)
 
     aw = AudioWatch(video_path=None, use_mic=False)
     # pretend probing a known no-audio path

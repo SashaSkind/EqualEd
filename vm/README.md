@@ -59,7 +59,7 @@ Useful flags:
 |---|---|
 | Annotated camera | Boxes, personal-space circles, MOVE tags |
 | Audio | **No audio track** for this clip, or dB / loud alert when audio exists |
-| Robots | invaded / clear + nearest person + speed |
+| Robots | humanoids: invaded / clear + nearest intruder (person or AGV) + speed; AGVs: speed only |
 | Moving agents | agents currently over the sudden-move threshold |
 | Events | invasion, clear, sudden, loud |
 
@@ -70,9 +70,10 @@ Useful flags:
 | People | YOLO11n `person` |
 | Teal humanoids | person boxes with cyan chest-plate pixels |
 | Yellow AGVs | YOLOE open-vocab |
-| Personal space | person center &lt; **1.15 × robot size** |
+| Personal space | humanoids only: a person or AGV center &lt; **1.15 × humanoid size** |
+| AGV role | can intrude on a humanoid's space; has no personal space, never "invaded" |
 | Sudden movement | box-center speed ≥ **1.35 body-lengths/s** |
-| Loud noise | file audio (ffmpeg) or `--mic`; loudness jump (+ optional YAMNet) |
+| Loud noise | file audio (ffmpeg) or `--mic`; ≥ 18 dB jump over a baseline seeded from the source's own level (+ optional YAMNet) |
 
 ### Testing loud noise on a clip *with* audio
 

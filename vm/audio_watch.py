@@ -63,6 +63,7 @@ class LoudnessEngine:
     def __init__(self):
         self.db = -90.0
         self.baseline = -55.0
+        self._seeded = False
         self.label = ""
         self.label_score = 0.0
         self.loud_at = -1e9
@@ -100,10 +101,16 @@ class LoudnessEngine:
         x = samples.astype(np.float32)
         db = float(20 * np.log10(np.sqrt(np.mean(x * x)) + 1e-9))
         self.db = db
+        if not self._seeded:
+            # start from the source's own level, or a noisy room is "loud" forever
+            self.baseline = max(db, -90.0)
+            self._seeded = True
         if db - self.baseline > 18 and db > -35:
             if now - self.loud_at > 0.8:
                 self.loud_db = db
             self.loud_at = now
+            # keep adapting slowly so a sustained level becomes the new normal
+            self.baseline = 0.99 * self.baseline + 0.01 * db
         else:
             self.baseline = 0.98 * self.baseline + 0.02 * db
         if self._interp is not None and len(x) >= 15600:
