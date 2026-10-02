@@ -103,7 +103,7 @@ TRIGGER_DEFS = [
 RESPONSE_DEFS = [
     ("ears", "Covering ears", 0.6),
     ("head_down", "Head down", 1.0),
-    ("rocking", "Rocking", 1.0),
+    ("rocking", "Rocking", 4.0),
 ]
 
 
