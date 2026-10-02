@@ -217,24 +217,20 @@ class Server:
 
 STUDENT_PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>EqualEd</title><style>
-:root{--bg:#f6f7f9;--card:#fff;--text:#14171c;--muted:#5d6675;--line:#e3e6eb;--accent:#3b6ef5;
---red:#d93a3f;--orange:#e07b14;--green:#1f9d5c;--chip:#eef1f6;--bar:#e9ecf1}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1115;--card:#181b22;--text:#e9edf3;--muted:#98a2b3;
---line:#272c36;--accent:#7aa2ff;--red:#ff6369;--orange:#ffa94d;--green:#4cc38a;--chip:#232833;--bar:#262b35}}
-:root[data-theme=dark]{--bg:#0f1115;--card:#181b22;--text:#e9edf3;--muted:#98a2b3;--line:#272c36;--accent:#7aa2ff;
---red:#ff6369;--orange:#ffa94d;--green:#4cc38a;--chip:#232833;--bar:#262b35}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,system-ui,sans-serif}
+<title>EqualEd</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel=stylesheet><style>
+:root{--bg:#F6F6F4;--card:#fff;--text:#111214;--muted:#8E9197;--line:#E7E7E4;--accent:#2D5BFF;
+--red:#EC4D93;--orange:#E08A00;--green:#18A957;--chip:#EFEFEC;--bar:#EFEFEC}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 Inter,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px}
-.wrap{max-width:1100px;margin:0 auto}h1{font-size:19px;margin:0}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.wrap{max-width:1100px;margin:0 auto}h1{font-size:30px;font-weight:400;letter-spacing:-.03em;margin:0}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chip{background:var(--chip);border-radius:999px;padding:3px 10px;font-size:12.5px;color:var(--muted)}
 .chip.ok{color:var(--green)}.chip.bad{color:var(--red)}.chip.warn{color:var(--orange)}
 nav{display:flex;gap:4px;margin-top:10px;overflow-x:auto}nav button{border:0;background:none;color:var(--muted);font:inherit;
-padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}nav button.on{background:var(--chip);color:var(--text);font-weight:600}
+padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}nav button.on{background:#1C1D20;color:#fff;font-weight:500;border-radius:999px}
 main{padding:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-.card h2{font-size:14px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.big{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}.small{font-size:13px}
+.card{background:var(--card);border:0;border-radius:24px;padding:18px 20px;box-shadow:0 1px 1px #0000000a,0 10px 30px #0000000d}
+.card h2{font-size:19px;margin:0 0 12px;color:var(--text);font-weight:500;letter-spacing:-.02em}
+.big{font-size:44px;font-weight:300;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}.small{font-size:13px}
 .meter{height:14px;background:var(--bar);border-radius:999px;overflow:hidden;margin:8px 0}
 .meter>div{height:100%;border-radius:999px;transition:width .3s,background .3s}
 .banner{border-radius:12px;padding:12px 14px;margin-bottom:14px;font-weight:600;display:none}
@@ -244,7 +240,7 @@ main{padding:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minma
 .dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--green)}.dot.on{background:var(--red)}.dot.off{background:var(--muted);opacity:.5}
 .grow{flex:1;min-width:0}.right{margin-left:auto;text-align:right}
 button.b{border:1px solid var(--line);background:var(--chip);color:var(--text);font:inherit;font-size:13px;padding:5px 10px;border-radius:8px;cursor:pointer}
-button.b.red{color:var(--red)}button.b.green{color:var(--green)}button.b.primary{background:var(--accent);color:#fff;border-color:transparent}
+button.b.red{color:var(--red)}button.b.green{color:var(--green)}button.b.primary{background:#1C1D20;color:#fff;border-color:transparent;border-radius:999px}
 .ev{padding:8px 0;border-bottom:1px solid var(--line)}.ev:last-child{border:0}.ev .t{font-size:12.5px;color:var(--muted)}
 .tag{font-size:11.5px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted)}
 .prof{display:grid;grid-template-columns:150px 1fr 52px;gap:8px;align-items:center;padding:4px 0}
@@ -416,27 +412,30 @@ renderParas();load();setInterval(load,700);
 
 
 APP_SHELL = """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>EqualEd</title><link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;700;800&family=Rubik:wght@600;700&display=swap" rel=stylesheet>
+<title>EqualEd</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel=stylesheet>
 <style>
-:root{--bg:#F4F2ED;--card:#FFFFFF;--ink:#14213D;--muted:#717C8B;--line:#E3E1DA;--accent:#13756C;--accent-bg:#DDF1EC;--alert:#B42D27}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0E1420;--card:#172131;--ink:#EAF0F7;--muted:#8D99AB;--line:#26324A;--accent:#5CC9B8;--accent-bg:#14373A;--alert:#FF7A70}}
-:root[data-theme=dark]{--bg:#0E1420;--card:#172131;--ink:#EAF0F7;--muted:#8D99AB;--line:#26324A;--accent:#5CC9B8;--accent-bg:#14373A;--alert:#FF7A70}
-*{box-sizing:border-box}html,body{margin:0;height:100%}body{background:var(--bg);color:var(--ink);font:15px/1.4 'Nunito Sans',-apple-system,system-ui,sans-serif;display:flex;flex-direction:column}
-nav{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--card)}
-.logo{display:flex;align-items:center;gap:8px;font:700 18px Rubik;margin-right:14px}.logo i{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#36C2B4,#3B5BDB)}
-nav button{font:700 14px 'Nunito Sans';border:0;background:none;color:var(--muted);padding:8px 14px;border-radius:9px;cursor:pointer}
-nav button.on{background:var(--accent-bg);color:var(--accent)}.sp{flex:1}.hint{font-size:12px;color:var(--muted)}
+:root{--bg:#EEEEEC;--card:#FFFFFF;--ink:#111214;--muted:#8E9197;--pill:#1C1D20;--glass:0 2px 6px #0000000f,0 0 0 1px #ffffffcc inset}
+*{box-sizing:border-box}html,body{margin:0;height:100%}body{background:var(--bg);color:var(--ink);font:15px/1.4 Inter,-apple-system,system-ui,sans-serif;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+nav{display:flex;align-items:center;gap:6px;padding:14px 22px}
+.logo{display:flex;align-items:center;gap:10px;font-size:24px;font-weight:500;letter-spacing:-.03em;margin-right:auto}
+.logo i{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#36C2B4,#3B5BDB);box-shadow:0 4px 12px #3b5bdb40}
+.tabs{display:flex;gap:4px;padding:4px;border-radius:999px}
+nav button{font:500 15px Inter,-apple-system,sans-serif;border:0;background:none;color:var(--ink);padding:10px 20px;border-radius:999px;cursor:pointer}
+nav button:hover{background:#ffffff99}
+nav button.on{background:var(--pill);color:#fff;box-shadow:0 6px 16px #0000002e}
+.sp{margin-left:auto}.hint{font-size:12px;color:var(--muted);background:var(--card);border-radius:999px;padding:7px 12px;box-shadow:var(--glass)}
 main{flex:1;position:relative}iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:none;background:var(--bg)}iframe.on{display:block}
-#live{position:absolute;inset:0;display:none;padding:16px;gap:16px}#live.on{display:flex}
-.view{flex:1;display:flex;align-items:center;justify-content:center;background:#0B0F17;border-radius:16px;overflow:hidden;min-width:0}
+#live{position:absolute;inset:0;display:none;padding:8px 22px 22px;gap:18px}#live.on{display:flex}
+.view{flex:1;display:flex;align-items:center;justify-content:center;background:#0E0F12;border-radius:28px;overflow:hidden;min-width:0;box-shadow:0 10px 30px #0000001f}
 .view img{max-width:100%;max-height:100%;object-fit:contain}
-.side{width:260px;display:flex;flex-direction:column;gap:10px}.side h3{font:700 13px 'Nunito Sans';text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:6px 0 2px}
-.side button{font:700 14px 'Nunito Sans';text-align:left;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:12px 14px;cursor:pointer}
-.side button.warn{border-color:var(--alert);color:var(--alert)}.side p{font-size:13px;color:var(--muted);margin:0}
+.side{width:280px;display:flex;flex-direction:column;gap:10px;background:var(--card);border-radius:28px;padding:20px;box-shadow:0 10px 30px #0000000d;align-self:flex-start}
+.side h3{font-size:20px;font-weight:500;letter-spacing:-.02em;margin:4px 0 4px}
+.side button{font:500 14px Inter,-apple-system,sans-serif;text-align:left;border:0;background:#F6F6F4;color:var(--ink);border-radius:16px;padding:13px 16px;cursor:pointer}
+.side button:hover{background:#EFEFEC}.side button.warn{background:#FCE7F1;color:#C2316F}.side p{font-size:13px;color:var(--muted);margin:0 0 6px}
 @media (max-width:800px){#live.on{flex-direction:column}.side{width:auto}}
 </style></head><body>
 <nav><div class=logo><i></i>EqualEd</div>
-<button data-p=teacher class=on>Teacher</button><button data-p=live>Live view</button><button data-p=student>Student</button>
+<div class=tabs><button data-p=teacher class=on>Teacher</button><button data-p=live>Live view</button><button data-p=student>Student</button></div>
 <span class=sp></span><span class=hint>Live view stays on this device</span></nav>
 <main>
 <iframe id=teacher class=on src="__TEACHER__" title="Teacher dashboard"></iframe>
