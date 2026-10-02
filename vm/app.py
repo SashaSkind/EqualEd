@@ -28,7 +28,9 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import clips  # noqa: E402
 from audio_watch import AudioWatch, LoudnessEngine  # noqa: E402
+from cosmos_watch import CosmosWatch, lead_times, parse_reply  # noqa: E402
 from detector import RobotSpaceDetector, SUDDEN_SPEED, Track  # noqa: E402
 
 PORT = int(os.environ.get("PORT", "8765"))
@@ -106,6 +108,10 @@ header{padding:18px 22px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:en
 .brand span{color:var(--accent)}
 .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
+nav a{color:var(--muted);text-decoration:none;font:13px var(--mono);margin-left:14px}
+nav a.on{color:var(--accent)}
+.clipbar{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.clipbar select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:13px var(--sans);max-width:420px}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font:12.5px var(--mono)}
 .chip b{color:var(--accent)}
 .chip.bad b{color:var(--bad)}.chip.ok b{color:var(--ok)}.chip.warn b{color:var(--warn)}
@@ -141,20 +147,39 @@ main{padding:8px 22px 28px;display:grid;grid-template-columns:1.3fr .9fr;gap:16p
 .empty{padding:18px;color:var(--muted)}
 footer{padding:0 22px 24px;color:var(--muted);font-size:12.5px}
 .stack{display:flex;flex-direction:column;gap:16px}
+.cosmos{padding:12px 14px;display:grid;gap:10px}
+.cosmos .head{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+.cosmos .lead{font-size:20px;font-weight:700;color:var(--accent)}
+.cosmos .lead.none{color:var(--muted);font-weight:600;font-size:16px}
+.cosmos .risk{font:700 26px var(--mono)}
+.cosmos svg{width:100%;height:150px;display:block;background:#0b110f;border:1px solid var(--line);border-radius:8px}
+.cosmos .mom{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:6px}
+.cosmos .mom b{color:var(--ink)}
 </style></head><body>
 <header>
   <div>
     <div class="brand">equal<span>Ed</span> · warehouse shield</div>
     <div class="sub">Personal space · sudden movement · loud noise</div>
   </div>
+  <div class="clipbar">
+    <nav><a id="nav-live" class="on" href="#">live shield</a><a id="nav-search" href="#">search triggers</a></nav>
+    <div><select id="clip" title="Pick a clip to analyze"><option>loading clips…</option></select></div>
+    <div class="sub" id="clipstatus"></div>
+  </div>
   <div class="chips" id="chips"></div>
 </header>
 <main>
+  <div class="stack">
   <section class="panel">
     <h2>Annotated camera</h2>
     <div class="stage"><img id="frame" alt="live frame"></div>
     <div class="meta" id="meta">waiting for frames…</div>
   </section>
+  <section class="panel">
+    <h2>Sensory risk · Cosmos3-Reason, every 2 s</h2>
+    <div class="cosmos" id="cosmos"><div class="empty">Waiting for the first 2-second window…</div></div>
+  </section>
+  </div>
   <div class="stack">
     <section class="panel">
       <h2>Audio</h2>
@@ -176,7 +201,9 @@ footer{padding:0 22px 24px;color:var(--muted);font-size:12.5px}
 </main>
 <footer>Humanoid personal space &lt; 1.15× robot size; people and AGVs can intrude, AGVs have no personal space. Sudden move ≥ speed threshold in body-lengths/s. Loud noise needs an audio track or --mic.</footer>
 <script>
+const BASE = location.pathname.startsWith('/app') ? '/app' : '';
 const $ = id => document.getElementById(id);
+$('nav-live').href = BASE + '/'; $('nav-search').href = BASE + '/search';
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
 function chips(S){
   const s=S.summary||{}, a=S.audio||{};
@@ -247,13 +274,65 @@ function events(S){
       <b>${who}</b> ${esc(e.detail)}</div></div>`;
   }).join('');
 }
+function riskColor(r){return r==null?'#3a4a44':r>=7?'var(--bad)':r>=4?'var(--warn)':'var(--ok)';}
+function cosmosPanel(S){
+  const c=S.cosmos||{};
+  if(!c.enabled){$('cosmos').innerHTML=`<div class="empty">Cosmos off: ${esc(c.reason||'starting')}</div>`;return;}
+  const tl=c.timeline||[], ms=c.moments||[], now=+S.video_t||0;
+  const D=Math.max(10, now, ...tl.map(w=>w.t1)), W=1000, H=150, top=14, base=118;
+  const X=t=>(t/D*W).toFixed(1), Y=r=>(base-(r/10)*(base-top)).toFixed(1);
+  const level=ms.length?ms[0].level:Math.min(Math.max((c.baseline||0)+2,3),6);
+  let g=`<line x1="0" x2="${W}" y1="${Y(level)}" y2="${Y(level)}" stroke="var(--warn)" stroke-dasharray="6 6" opacity=".5"/>
+    <text x="4" y="${+Y(level)-4}" fill="var(--warn)" font-size="11" opacity=".8">rise level ${level}</text>`;
+  for(const w of tl){
+    const x=+X(w.t0), bw=Math.max(2,+X(w.t1)-x-2);
+    if(w.risk==null){g+=`<rect x="${x}" y="${top}" width="${bw}" height="${base-top}" fill="none" stroke="#3a4a44" stroke-dasharray="3 4"/>`;continue;}
+    g+=`<rect x="${x}" y="${Y(w.risk)}" width="${bw}" height="${(base-+Y(w.risk)).toFixed(1)}" fill="${riskColor(w.risk)}" opacity=".85"><title>${w.t0}-${w.t1}s RISK ${w.risk}: ${esc(w.reason)}</title></rect>`;
+  }
+  for(const m of ms){
+    const col=m.kinds.includes('invasion')?'var(--bad)':m.kinds.includes('loud')?'#c58cff':'#ff8a3d';
+    if(m.lead!=null){
+      g+=`<rect x="${X(m.rise_t)}" y="${base+2}" width="${(+X(m.t)-+X(m.rise_t)).toFixed(1)}" height="10" fill="var(--accent)" opacity=".35"/>
+        <text x="${X(m.t)}" y="${top-3}" fill="var(--accent)" font-size="12" text-anchor="end">+${m.lead}s early</text>`;
+    }
+    g+=`<line x1="${X(m.t)}" x2="${X(m.t)}" y1="${top}" y2="${base+12}" stroke="${col}" stroke-width="2"><title>${m.t}s ${esc(m.what)}</title></line>`;
+  }
+  g+=`<line x1="${X(now)}" x2="${X(now)}" y1="0" y2="${H}" stroke="#fff" opacity=".35"/>
+    <text x="4" y="${H-6}" fill="var(--muted)" font-size="11">0 s</text><text x="${W-4}" y="${H-6}" fill="var(--muted)" font-size="11" text-anchor="end">${D.toFixed(0)} s</text>`;
+  const L=c.latest;
+  const lead=c.lead_median!=null
+    ? `<div class="lead">Cosmos saw it coming ${c.lead_median} s early</div><div class="detail">${c.predicted} of ${c.moments_n} busy moments had a risk rise first · best ${c.lead_best} s · lead counted from when the answer arrived</div>`
+    : `<div class="lead none">No early warning yet</div><div class="detail">${c.moments_n||0} busy moments so far · ${tl.filter(w=>w.risk!=null).length} windows scored</div>`;
+  const moms=ms.slice(-4).reverse().map(m=>`<div class="mom"><b>${m.t}s</b> ${esc(m.what)}${m.events>1?` (+${m.events-1} more)`:''} — ${m.lead!=null?`risk ${m.rise_risk} at ${m.rise_t}s, <b style="color:var(--accent)">${m.lead}s early</b>`:m.predictable?'no risk rise before it':'before the first Cosmos answer'}</div>`).join('');
+  $('cosmos').innerHTML=`<div class="head">${L?`<div class="risk" style="color:${riskColor(L.risk)}">RISK ${L.risk}/10</div>`:''}<div>${lead}</div></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${g}</svg>
+    <div class="detail">${L?`<b style="color:var(--ink)">${L.t0}–${L.t1}s:</b> ${esc(L.reason)} <span style="opacity:.7">(${L.latency}s call)</span>`:'first answer in about 2 s'} · ${c.pending||0} pending · ${c.errors||0} errors</div>
+    ${moms}`;
+}
+let clipStatus=null;
+async function loadClips(){
+  try{
+    const j=await (await fetch(BASE+'/api/clips',{cache:'no-store'})).json();
+    const opt=(v,label,cur)=>`<option value="${esc(v)}"${cur?' selected':''}>${esc(label)}</option>`;
+    $('clip').innerHTML =
+      (j.local.length?`<optgroup label="On this machine">${j.local.map(c=>opt('path:'+c.path,c.name,c.name===j.current)).join('')}</optgroup>`:'') +
+      `<optgroup label="VAST archive (downloads once)">${j.archive.map(c=>opt('source:'+c.source,c.label+(c.cached?'':' (download)'),c.source.split('/').pop()===j.current)).join('')}</optgroup>`;
+  }catch(e){}
+}
+$('clip').onchange=async e=>{
+  const v=e.target.value, i=v.indexOf(':');
+  $('clipstatus').textContent='switching…';
+  await fetch(BASE+'/api/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[v.slice(0,i)]:v.slice(i+1)})});
+};
+loadClips();
 async function tick(){
   try{
-    const r=await fetch('/api/state',{cache:'no-store'});
+    const r=await fetch(BASE+'/api/state',{cache:'no-store'});
     const S=await r.json();
-    chips(S); audioPanel(S); robots(S); sudden(S); events(S);
+    if(S.clip_status!==clipStatus){ clipStatus=S.clip_status; $('clipstatus').textContent=clipStatus||''; loadClips(); }
+    chips(S); audioPanel(S); robots(S); sudden(S); events(S); cosmosPanel(S);
     $('meta').textContent = `${S.video||''} · frame ${S.frame} · playing=${S.playing}`;
-    $('frame').src = '/api/frame.jpg?ts='+Date.now();
+    $('frame').src = BASE+'/api/frame.jpg?ts='+Date.now();
   }catch(e){}
 }
 tick(); setInterval(tick, 700);
@@ -268,9 +347,29 @@ class AppState:
             "video_t": 0, "frame": 0, "robots": [], "people": [],
             "summary": {"robots": 0, "people": 0, "invaded": 0, "clear": 0, "sudden": 0},
             "events": [], "audio": {"has_audio": False, "reason": "starting"},
+            "cosmos": {"enabled": False, "reason": "starting"},
             "fps": 0, "playing": False, "video": "",
         }
         self.jpeg = self._placeholder_jpeg("starting…")
+        self.switch_to: Path | None = None
+        self.clip_status = ""
+
+    def request_switch(self, path: Path):
+        with self.lock:
+            self.switch_to = Path(path)
+            self.clip_status = f"switching to {Path(path).name}…"
+
+    def take_switch(self) -> Path | None:
+        with self.lock:
+            p, self.switch_to = self.switch_to, None
+            return p
+
+    def switch_pending(self) -> bool:
+        return self.switch_to is not None
+
+    def set_status(self, msg: str):
+        with self.lock:
+            self.clip_status = msg
 
     @staticmethod
     def _placeholder_jpeg(msg: str) -> bytes:
@@ -289,7 +388,7 @@ class AppState:
 
     def get_state(self) -> dict:
         with self.lock:
-            return dict(self.state)
+            return dict(self.state, clip_status=self.clip_status)
 
     def get_jpeg(self) -> bytes:
         with self.lock:
@@ -299,10 +398,79 @@ class AppState:
 SHARED = AppState()
 
 
+_VSS = None
+
+
+def vss():
+    global _VSS
+    if _VSS is None:
+        import archive
+        _VSS = archive.VSS()
+    return _VSS
+
+
+def switch_clip(body: dict) -> tuple[int, dict]:
+    """Play a local file (must be in the clip list) or download + play an archive chunk."""
+    if body.get("path"):
+        p = Path(str(body["path"])).resolve()
+        if p not in clips.local_clips(SEARCH_DIRS):
+            return 400, {"error": "not a known clip"}
+        SHARED.request_switch(p)
+        return 200, {"ok": True, "switching": p.name}
+    src = str(body.get("source") or "")
+    if not src.startswith(clips.ALLOWED_PREFIXES):
+        return 400, {"error": "unknown source"}
+    clips.fetch(src, lambda s: vss().stream(s), SHARED.request_switch, SHARED.set_status)
+    return 200, {"ok": True, "fetching": src.rsplit("/", 1)[-1]}
+
+
 def start_server(port: int):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
+
+        def _json(self, code, obj):
+            return self._send(code, json.dumps(obj), "application/json")
+
+        def _body(self) -> dict:
+            n = int(self.headers.get("Content-Length") or 0)
+            return json.loads(self.rfile.read(n) or b"{}") if n else {}
+
+        def _clip(self, source: str):
+            if not source.startswith("s3://"):
+                return self._send(400, "bad source", "text/plain")
+            r = vss().stream(source, self.headers.get("Range"))
+            try:
+                self.send_response(r.status_code)
+                self.send_header("Content-Type", "video/mp4")
+                for h in ("Content-Length", "Content-Range", "Accept-Ranges"):
+                    if r.headers.get(h):
+                        self.send_header(h, r.headers[h])
+                self.send_header("Cache-Control", "private, max-age=600")
+                self.end_headers()
+                for chunk in r.iter_content(64 * 1024):
+                    self.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                r.close()
+
+        def do_POST(self):
+            path = self.path.split("?")[0]
+            try:
+                body = self._body()
+                if path == "/api/search":
+                    return self._json(200, vss().search(str(body.get("query", ""))[:300]))
+                if path == "/api/summarize":
+                    import archive
+                    return self._json(200, archive.summarize(str(body.get("query", ""))[:300],
+                                                             list(body.get("hits") or [])[:12]))
+                if path == "/api/switch":
+                    return self._json(*switch_clip(body))
+            except Exception as e:
+                log("api error", path, type(e).__name__, str(e)[:200])
+                return self._json(502, {"error": f"{type(e).__name__}: {str(e)[:200]}"})
+            self._send(404, "not found", "text/plain")
 
         def _send(self, code, body, ctype):
             if isinstance(body, str):
@@ -325,6 +493,24 @@ def start_server(port: int):
                 return self._send(200, SHARED.get_jpeg(), "image/jpeg")
             if path == "/health":
                 return self._send(200, '{"ok":true}', "application/json")
+            if path == "/search":
+                from search_page import SEARCH_PAGE
+                return self._send(200, SEARCH_PAGE, "text/html; charset=utf-8")
+            if path == "/api/clips":
+                return self._json(200, clips.listing(SEARCH_DIRS, SHARED.get_state().get("video", "")))
+            if path == "/api/presets":
+                import archive
+                return self._json(200, archive.PRESETS)
+            if path == "/api/sensory_map":
+                import archive
+                return self._json(200, archive.sensory_map())
+            if path == "/api/clip":
+                from urllib.parse import parse_qs, urlsplit
+                src = (parse_qs(urlsplit(self.path).query).get("source") or [""])[0]
+                try:
+                    return self._clip(src)
+                except Exception as e:
+                    return self._json(502, {"error": f"{type(e).__name__}: {str(e)[:200]}"})
             self._send(404, "not found", "text/plain")
 
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
@@ -351,33 +537,54 @@ def merge_events(det_events, audio_events):
     return merged[:40]
 
 
+_DET: RobotSpaceDetector | None = None
+_COSMOS: dict[str, CosmosWatch] = {}    # per clip, so switching back reuses scored windows
+
+
 def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False, use_mic=False):
-    device = pick_device()
-    log("device:", device)
-    log("loading models (first run downloads weights)…")
-    det = RobotSpaceDetector(device=device)
+    global _DET
+    if _DET is None:
+        device = pick_device()
+        log("device:", device)
+        log("loading models (first run downloads weights)…")
+        _DET = RobotSpaceDetector(device=device)
+    det = _DET
+    det.reset()
     log("probing audio…")
     audio = AudioWatch(path, use_mic=use_mic)
     log("audio:", audio.state()["source"], audio.state()["reason"] or "ok")
+    cosmos = _COSMOS.get(str(path))
+    if cosmos is None:
+        cosmos = _COSMOS[str(path)] = CosmosWatch(path)
+    cosmos.restart()
+    log("cosmos:", "on" if cosmos.enabled else f"off ({cosmos.reason})")
+    history: dict[tuple, dict] = {}     # every detector event of this pass, for lead times
+    cstate = cosmos.state([])
     log("video:", path)
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
+        SHARED.set_status(f"could not open {path.name}")
         raise SystemExit(f"could not open video: {path}")
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     log(f"source fps={src_fps:.1f} frames={n_frames} duration~{n_frames/src_fps:.1f}s stride={stride}")
+    SHARED.set_status(f"playing {path.name} ({n_frames / src_fps:.0f} s)")
 
     playing = True
     fps_ema = 0.0
     t_wall0 = time.time()
     processed = 0
     while True:
+        if SHARED.switch_pending():
+            break
         ok, frame = cap.read()
         if not ok:
             if loop and max_seconds is None:
                 log("looping video")
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 det.reset()
+                cosmos.restart()
+                history.clear()
                 continue
             break
         frame_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -394,9 +601,15 @@ def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False, 
             frame = cv2.resize(frame, (1280, int(h * scale)))
         st = det.process(frame, video_t=video_t)
         audio.update(video_t)
+        cosmos.update(video_t)
         astate = audio.state()
         st["audio"] = astate
         st["events"] = merge_events(st.get("events", []), astate.get("events", []))
+        for e in st["events"]:
+            history.setdefault((e["kind"], e["t"], e.get("robot") or e.get("agent")), e)
+        if processed % 5 == 0:
+            cstate = cosmos.state(list(history.values()))
+        st["cosmos"] = cstate
         vis = det.annotate(frame, st)
         # audio banner strip
         if not astate.get("has_audio"):
@@ -422,7 +635,13 @@ def run_video(path: Path, *, loop=True, max_seconds=None, stride=2, show=False, 
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
+    cap.release()
     st = det.state()
+    deadline = time.time() + 30
+    while (cosmos.enabled and cosmos.state([])["pending"] and time.time() < deadline
+           and not SHARED.switch_pending()):
+        time.sleep(0.5)
+    st["cosmos"] = cosmos.state(list(history.values()))
     astate = audio.state()
     st["audio"] = astate
     st["events"] = merge_events(st.get("events", []), astate.get("events", []))
@@ -488,6 +707,19 @@ def selftest():
     eng.feed(rng.normal(0, 0.7, 4000).astype(np.float32), now=now + 4.1)
     assert eng.loud_event(now + 4.15)[0], (eng.db, eng.baseline)
 
+    # Cosmos reply parsing (prose and scored-list styles) and lead time from answer arrival
+    assert parse_reply("People walk calmly. Nothing loud. RISK: 2") == (2, "People walk calmly.")
+    r, why = parse_reply("Crowding around a person: 0.9\nRapid movement: 0.8\nCommotion: 0.3\n\nRISK: 8")
+    assert r == 8 and why.startswith("triggers: crowding around a person 0.9"), why
+    wins = [{"t0": t, "t1": t + 2, "risk": k, "latency": 1.0} for t, k in
+            [(0, 2), (2, 2), (4, 7), (6, 8), (8, 2), (10, 2)]]
+    evs = [{"kind": "invasion", "t": 11.0, "robot": "R1"}, {"kind": "invasion", "t": 11.5, "robot": "R2"},
+           {"kind": "sudden", "t": 3.5, "agent": "P3"}, {"kind": "loud", "t": 0.2}]
+    lt = {m["t"]: m for m in lead_times(wins, evs)}
+    assert lt[11.0]["lead"] == 4.0 and lt[11.0]["events"] == 2 and lt[11.0]["rise_t"] == 6, lt
+    assert lt[3.5]["lead"] is None and lt[3.5]["predictable"], lt
+    assert lt[0.2]["kinds"] == ["loud"] and not lt[0.2]["predictable"], lt
+
     aw = AudioWatch(video_path=None, use_mic=False)
     # pretend probing a known no-audio path
     aw.has_audio = False
@@ -540,22 +772,48 @@ def main():
     if not args.no_server:
         start_server(args.port)
 
-    path = find_video(args.video)
-    st = run_video(path, loop=not args.once, max_seconds=args.max_seconds,
-                   stride=max(1, args.stride), show=args.show, use_mic=args.mic)
+    if args.video:
+        SEARCH_DIRS.insert(0, Path(args.video).expanduser().resolve().parent)
+    try:
+        path = find_video(args.video)
+    except SystemExit:
+        if args.video or args.no_server:
+            raise
+        first = clips.ARCHIVE_CLIPS[0]["source"]
+        log("no local video; fetching", first.rsplit("/", 1)[-1], "from the archive")
+        switch_clip({"source": first})
+        while not SHARED.switch_pending():
+            time.sleep(0.5)
+        path = SHARED.take_switch()
+    while True:
+        st = run_video(path, loop=not args.once, max_seconds=args.max_seconds,
+                       stride=max(1, args.stride), show=args.show, use_mic=args.mic)
+        nxt = SHARED.take_switch()
+        if nxt is None:
+            break
+        log("switching to", nxt)
+        path = nxt
     if args.once or args.max_seconds:
         print(json.dumps({
             "video": str(path),
             "summary": st["summary"],
             "audio": st.get("audio"),
+            "cosmos": {k: v for k, v in (st.get("cosmos") or {}).items() if k != "timeline"},
+            "cosmos_timeline": [(w["t0"], w["risk"], w["latency"]) for w in (st.get("cosmos") or {}).get("timeline", [])],
             "robots": st["robots"],
             "events_head": st["events"][:12],
         }, indent=2))
         return
 
-    log("idle — dashboard still serving last state. Ctrl+C to quit.")
+    log("idle — dashboard still serving last state; pick a clip to play again. Ctrl+C to quit.")
     while True:
-        time.sleep(3600)
+        time.sleep(0.5)
+        nxt = SHARED.take_switch()
+        if nxt is not None:
+            path = nxt
+            while path is not None:
+                run_video(path, loop=True, stride=max(1, args.stride), use_mic=args.mic)
+                path = SHARED.take_switch()
 
 
 if __name__ == "__main__":

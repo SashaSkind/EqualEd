@@ -269,3 +269,61 @@ their ears" puts 2 pilot segments in the top 5; "RISK: 2" and "calm space with n
 clips now rank first for crowd and approach queries, but the gains are 0.01 to 0.04 and the other four
 queries are unchanged, because Cosmos honestly rated this footage calm and there is no loud machine in it.
 Re-ingesting the SF crosswalk chunks (where the busy moments are) is the next thing to try if a human agrees.
+
+## Done: Task 2, Cosmos sensory-risk timeline (2026-10-02)
+
+`vm/cosmos_watch.py`. Every 2 s of video, ffmpeg cuts the last 2 s (960 px, H.264, CRF 30) and two worker
+threads send it to `nvidia/cosmos3-nano-reasoner` (temperature 0.2, the START_HERE sensory prompt verbatim).
+Playback never waits. Windows are cached per clip, so a loop or switching back does not re-call Cosmos.
+The dashboard shows a 0 to 10 risk bar chart, the latest one-line reason, busy-moment markers
+(invasion red, sudden orange, loud purple) and a "Cosmos saw it coming N s early" headline.
+
+How the lead is counted (honest version):
+- A moment = invasion / sudden / loud events, merged when less than 3 s apart.
+- Elevated = risk at least clip median + 2, at least 3, capped at 6.
+- The run of elevated windows must include one of the last two answers before the moment, and the lead is
+  measured from when Cosmos's **answer arrived** (window end + call latency), not from the window end.
+- Moments before the first answer are listed as "before the first Cosmos answer" and not counted.
+
+Measured (15 windows per 30 s clip, 0 errors; median call latency 1.9 s to 2.6 s with 2 workers):
+
+| Clip | Risk per 2 s window | Lead result |
+|------|---------------------|-------------|
+| SF crosswalk `sf2_chunk_0019` (audio) | 3,–,0,6,8,2,3,7,6,3,2,5,2,–,8 (– = reply had no RISK line) | 2 of 4 predictable moments warned, **1.3 s and 5.4 s early** |
+| Warehouse `080730` | 0,3,2,0,0,0,2,0,2,0,0,2,2,2,2 | none: risk never reached the rise level of 4 |
+
+**Cosmos is noisy at temperature 0.2.** Three runs of the same warehouse clip: the 8 to 12 s windows scored
+8 and 9, then 0 and 0, then 0 and 0. It switches between a prose answer (usually RISK 0 to 3) and a
+"trigger: score" list (usually RISK 8 to 9, often listing triggers that are not there, such as "a chair being
+moved 0.6" in a warehouse). The reason line shows the top scored triggers when it answers with a list.
+Treat any single lead number as anecdotal; asking for JSON or averaging two calls per window would help.
+
+The detector's teal-chest heuristic also tags some SF pedestrians in blue shirts as "humanoid robots", so
+on street clips an "invasion" really means "someone very close to another person".
+
+## Done: Task 3, Search triggers page (2026-10-02)
+
+`/search` (`vm/archive.py`, `vm/search_page.py`):
+- VSS `POST /api/v1/search` (`top_k 12`, `llm_top_n 1`, `min_similarity 0.2`), 5 to 10 s per query.
+  "crowd of people crossing the street" returns 12 SF crosswalk moments, best 0.54 (`sf4_chunk_0026`).
+- Clips play through the app's `/api/clip` proxy (VSS stream with the JWT kept server-side, Range requests
+  pass through, content type rewritten from `binary/octet-stream` to `video/mp4`).
+- The 7 preset buttons from NEXT_STEPS.
+- Sensory map from `archive_sensory_labels.json` (looked up in `vm/` first, then the repo root): 9 places
+  ranked from SF cam-2 (5.5/10, 76 % high) to neighborhood night (0.6/10), with play buttons for each
+  place's top clips.
+- "Summarize" sends the top 8 hits plus the per-place loads to W&B `meta-llama/Llama-3.3-70B-Instruct`
+  (OpenAI SDK, `project=vastdata/team-17`): 2.3 s to 2.8 s. Traced with Weave in `vastdata/team-17`.
+- Each result has "analyze this chunk in live shield", which loads the parent chunk into the live page.
+
+Archive note: the real SF ambulance is `20261001_094630_sf1_chunk_0013.mp4` at 5 s (score 0.29 with a
+`camera_id` filter). Without the filter, "an ambulance with flashing lights" ranks a Toronto dashcam chunk
+(`set06_video_chunk_0025`, a delivery van) first at 0.33.
+
+## Clip picker on the live page
+
+A dropdown lists the video files on the machine plus 6 archive demo chunks (SF crosswalk x2, SF ambulance,
+warehouse Camera_02, synthetic forklift, Toronto streetcar). Archive chunks are downloaded once through VSS
+into `/tmp/equaled_clips` (34 MB took a few seconds) and then analyzed like local files. Parent chunks are
+HEVC, and OpenCV and ffmpeg decode them fine. With no local video at all (the pod), the app downloads the
+first archive clip and starts with it.
