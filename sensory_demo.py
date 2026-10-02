@@ -103,7 +103,7 @@ TRIGGER_DEFS = [
 RESPONSE_DEFS = [
     ("ears", "Covering ears", 0.6),
     ("head_down", "Head down", 1.0),
-    ("rocking", "Rocking", 2.0),
+    ("rocking", "Rocking", 1.0),
 ]
 
 
@@ -250,12 +250,12 @@ def _flips(sig, min_p2p):
     den = float(np.dot(z, z)) or 1e-9
     lags = range(6, min(60, len(z) // 2))
     best = max((float(np.dot(z[:-L], z[L:])) / den * len(z) / (len(z) - L) for L in lags), default=0.0)
-    if best < 0.7:
+    if best < 0.5:
         return 0, p2p
     return flips, p2p
 
 
-def rocking_score(tr, now, window=5.0):
+def rocking_score(tr, now, window=6.0):
     """Back-and-forth swings of the head (side to side, up and down, toward/away from the
     camera) and of the shoulders. Returns (best swing count, details)."""
     head = {"x": [], "y": [], "size": []}
@@ -276,11 +276,11 @@ def rocking_score(tr, now, window=5.0):
         drift = max(abs(np.mean(head["x"][-k5:]) - np.mean(head["x"][:k5])),
                     abs(np.mean(head["y"][-k5:]) - np.mean(head["y"][:k5]))) / scale
         info["drift"] = round(float(drift), 2)
-        if drift > 1.2:            # the student moved somewhere else: shifting/moving around, not rocking in place
+        if drift > 1.8:            # the student moved somewhere else: shifting/moving around, not rocking in place
             return 0, info
-        for name, sig, mp in (("head side-to-side", np.array(head["x"]) / scale, 0.9),
-                              ("head up-and-down", np.array(head["y"]) / scale, 0.9),
-                              ("toward/away", np.array(head["size"]) / scale, 0.12)):
+        for name, sig, mp in (("head side-to-side", np.array(head["x"]) / scale, 0.5),
+                              ("head up-and-down", np.array(head["y"]) / scale, 0.5),
+                              ("toward/away", np.array(head["size"]) / scale, 0.08)):
             f, p = _flips(sig, mp)
             info[name] = (f, round(p, 2))
             best = max(best, f)
@@ -408,6 +408,7 @@ class Demo:
         self.hectic_hist = collections.deque(maxlen=400)   # (t, above line?)
         self.teacher_sent = {}          # trigger key -> last time the teacher was told
         self.marks = []                 # (box, text, color) drawn on the people causing triggers
+        self.fired = collections.deque(maxlen=50)   # (t, trigger key) for "a lot at once"
         self.requested_source, self.source_label = None, "webcam"
         self._state = "{}"
         self.last_publish = 0.0
@@ -808,6 +809,12 @@ class Demo:
             t = self.trig[key]
             if t.update(active, now, val):
                 self.recent.append((now, t.label))
+                self.fired.append((now, key))
+                recent_keys = {k for t, k in self.fired if now - t <= 5.0}
+                if key in ("noise", "dwell", "rush", "approach"):
+                    self.soothe(t.label.lower(), now)
+                elif len(recent_keys) >= 2:
+                    self.soothe("a lot happening at once: " + ", ".join(sorted(self.trig[k].label.lower() for k in recent_keys)), now)
                 if key == "noise":
                     self.on_loud_sound(now, noise_desc, frame)
                 else:
@@ -919,7 +926,7 @@ class Demo:
                 resp_state["head_down"] = (gap < 0.15, f"nose above shoulders: {gap:.2f}")
             rs, rinfo = rocking_score(tr, now)
             self.rock_debug = rinfo
-            resp_state["rocking"] = (rs >= 6, f"steady back-and-forth swings: {rs}")
+            resp_state["rocking"] = (rs >= 4, f"steady back-and-forth swings: {rs}")
         for key, (active, val) in resp_state.items():
             r = self.resp[key]
             if r.update(active, now, val):
@@ -938,15 +945,15 @@ class Demo:
         if reacting and now - self.episode_at > EPISODE_COOLDOWN:
             self.start_episode(reacting, frame, now)
 
-        # 9b) calming sound only lasts while the student is in distress: stop after 20 s without signs
+        # 9b) keep the calming sound while anything stressful is going on; stop after 20 quiet seconds
         if self.calm.playing():
-            distressed = any(self.resp[k].alerting(now) for k in ("ears", "rocking")) or (
-                self.resp["head_down"].alerting(now) and firing)
-            if distressed:
-                self.last_distress = now
-            elif now - max(getattr(self, "last_distress", 0), self.episode_at) > 20:
+            stressed = (any(t.alerting(now) for t in self.trig.values()) or self.hectic >= 40 or
+                        any(self.resp[k].alerting(now) for k in ("ears", "rocking")))
+            if stressed:
+                self.stress_last = now
+            elif now - getattr(self, "stress_last", now) > 20:
                 self.calm.stop()
-                self.log_event("calm again", "calm", "Student calm for 20 s: calming sound stopped", None)
+                self.log_event("calm again", "calm", "20 quiet seconds: calming sound stopped", None)
 
         # 10) ADHD attention
         phone_near = False
@@ -986,13 +993,14 @@ class Demo:
     # ------------------------------------------------------------ actions
     def prearm(self, now, frame):
         self.prearm_at, self.prearm_reason = now, self.risk_reason
-        where = None        # calming sound is only for real distress (start_episode), not predictions
+        self.soothe(f"predicted loud moment ({self.risk_reason})" if self.risk_reason else "predicted loud moment", now)
+        where = self.calm.output_name if self.calm.playing() else None
         self.pred_open.append({"t": now, "reason": self.risk_reason})
         top = self.risk_parts[0] if self.risk_parts else (0, self.risk_reason, None)
         self.log_event("prediction", "prediction", f"Heads up: {self.risk_reason}", frame,
                        {"risk": round(self.risk, 2), "sound": where}, pkey=top[2],
                        plabel=(top[2] or "").replace("object:", "").capitalize() or self.risk_reason,
-                       detail=f"risk {self.risk:.0%}, warning only (sound plays only if the student shows distress)")
+                       detail=f"risk {self.risk:.0%}" + (f", calming sound on {where}" if where else ""))
 
     def on_loud_sound(self, now, desc, frame):
         label = desc.split(" (")[0]
@@ -1011,6 +1019,17 @@ class Demo:
         self.log_event("loud sound", "noise", label.capitalize(), frame, {"detail": desc}, pkey="sound:" + label,
                        plabel=label.capitalize() + " sound", detail=detail)
 
+    def soothe(self, why, now):
+        """Play the calming sound for a stressful moment (AirPods if connected). Stops by itself
+        after 20 quiet seconds so the student can hear the lesson again."""
+        self.stress_last = now
+        if self.calm.playing() or now - getattr(self, "soothe_at", -1e9) < 8:
+            return
+        where = self.calm.play()
+        self.soothe_at = now
+        if where:
+            self.log_event("calming", "calm", f"Calming sound: {why}", None, detail=f"playing on {where}")
+
     def tell_teacher(self, key, label, detail, now):
         """On-screen notification for the teacher whenever a trigger fires (rate-limited per trigger)."""
         if now - self.teacher_sent.get(key, -1e9) < TEACHER_TRIGGER_COOLDOWN:
@@ -1028,8 +1047,9 @@ class Demo:
     def hectic_alert(self, now, frame):
         self.hectic_alert_at = now
         name = self.cfg.get("student_name", "The student")
-        where = None        # no sound: the student isn't showing distress yet, only the room is busy
-        sound = "No calming sound yet: the student isn't showing signs of distress"
+        self.soothe("very busy around the student", now)
+        where = self.calm.output_name if self.calm.playing() else None
+        sound = f"Calming sound playing on {where}" if where else "Calming sound not available"
         why = ", ".join(self.hectic_parts or getattr(self, "last_hectic_parts", [])) or "a lot going on"
         aid = self.server.notify(f"Very busy around {name}: {why}. Please check in.",
                                  sorted({lbl for t, lbl in self.recent if now - t <= 20}), sound, kind="hectic")
@@ -1040,7 +1060,8 @@ class Demo:
 
     def start_episode(self, reacting, frame, now):
         causes = sorted({lbl for t, lbl in self.recent if now - t <= 20})
-        where = self.calm.play()
+        self.soothe("signs of distress", now)
+        where = self.calm.output_name if self.calm.playing() else None
         sound = (f"Calming sound playing on {where}" if where else
                  f"Calming sound held back: no AirPods connected (sound output is {self.calm.output_name})")
         reason = "Signs of overload: " + ", ".join(r.lower() for r in reacting)
