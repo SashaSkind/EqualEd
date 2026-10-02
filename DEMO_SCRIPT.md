@@ -7,7 +7,7 @@ laptop speakers" so the judges hear the calming sound. Two teammates standing of
 
 | Time | Say | Do | Judges see |
 |---|---|---|---|
-| 0:00 | "1 in 36 US kids is autistic, and for most of them sensory overload, not the lesson, decides whether they can stay in a regular classroom." | Sit at the laptop. | Camera window, calm. |
+| 0:00 | "1 in 31 US 8-year-olds is autistic (CDC, 2025), and for most of them sensory overload, not the lesson, decides whether they can stay in a regular classroom." | Sit at the laptop. | Camera window, calm. |
 | 0:10 | "EqualEd runs on the student's own laptop. I raise my hands so it locks onto me, and only me." | Raise both hands 1 s. | Green "LOCKED ON" banner, oval bubble around you. |
 | 0:20 | "It watches the bubble around me, not the whole room." | Teammate A walks around far away. | Busy meter stays low. Nothing fires. |
 | 0:30 | "Now the room closes in." | Teammates A and B walk up and stay beside you. | Labels "TOO CLOSE", "STAYING CLOSE 5s", red lines, busy meter climbs. |
