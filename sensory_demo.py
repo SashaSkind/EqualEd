@@ -226,7 +226,7 @@ def rocking_score(tr, now, window=4.0):
     for sig in (np.array(xs) / sw, np.array(ys) / sw, np.array(ss) / sw):
         d = np.convolve(sig - sig.mean(), np.ones(3) / 3, mode="same")
         p2p = np.percentile(d, 90) - np.percentile(d, 10)
-        if p2p < 0.12:
+        if p2p < 0.22:          # swings must be at least ~a fifth of shoulder width
             continue
         th, state, flips = 0.25 * p2p, 0, 0
         for v in d:
@@ -345,6 +345,7 @@ class Demo:
             self.profile = {}
         self.inbox = queue.Queue()
         self.recording = False
+        self.one_hand_since = None
         self.requested_source, self.source_label = None, "webcam"
         self._state = "{}"
         self.last_publish = 0.0
@@ -455,10 +456,16 @@ class Demo:
         ev = {"kind": kind, "key": key, "label": label}
         if extra:
             ev.update(extra)
-        if frame is not None and kind in ("trigger", "overload", "prediction", "loud sound"):
+        if frame is not None and kind in ("trigger", "overload", "prediction", "loud sound", "reaction"):
             fn = os.path.join(self.event_dir, f"{time.strftime('%Y%m%d-%H%M%S')}-{key}.jpg".replace(":", "-").replace(" ", "_"))
             cv2.imwrite(fn, frame)
             ev["snapshot"] = fn
+            snaps = sorted(f for f in os.listdir(self.event_dir) if f.endswith(".jpg"))
+            for old_f in snaps[:-300]:
+                try:
+                    os.remove(os.path.join(self.event_dir, old_f))
+                except OSError:
+                    pass
         self.write_event(ev)
         self.events.append({"id": self.next_event_id, "t": time.time(), "time": clock(time.time()), "kind": kind,
                             "label": label, "detail": detail, "pkey": pkey, "plabel": plabel or label, "feedback": None})
@@ -645,28 +652,49 @@ class Demo:
 
         # 8) student reactions, linked to recent triggers
         resp_state = {"ears": (False, ""), "head_down": (False, ""), "rocking": (False, "")}
-        if subject is not None:
+        # Reactions are judged only for someone close to the camera (the student at this laptop).
+        # A small figure across the room is too far to tell ear-covering or rocking from normal gestures.
+        close_enough = subject is not None and (self.mode == "pick" or bh(subject[1]) >= 0.35 * H)
+        if not close_enough:
+            resp_state = {k: (False, "no student close to the camera") for k in resp_state}
+        if close_enough:
             _, b, k, c, tr = subject
             sw = shoulder_w(k, c, b)
+            # Covering ears = a raised hand right at the side of the head, at ear height.
+            # Both hands counts at once; one hand only if it stays there 2.5 s
+            # (one hand near the head is usually scratching, leaning or adjusting glasses).
             hands = 0
+            ear_pts = [k[i] for i in (L_EAR, R_EAR) if c[i] > 0.4]
+            if not ear_pts and c[L_EYE] > 0.4 and c[R_EYE] > 0.4:     # ears hidden: estimate from the eyes
+                mid = (k[L_EYE] + k[R_EYE]) / 2
+                half = 1.6 * (k[L_EYE] - k[R_EYE]) / 2
+                ear_pts = [mid + half, mid - half]
+            sh_y = mean_pt(k, c, (L_SH, R_SH))
             for wr in (L_WR, R_WR):
-                if c[wr] > 0.4:
-                    spots = [k[i] for i in (L_EAR, R_EAR, L_EYE, R_EYE) if c[i] > 0.4]
-                    if spots and min(np.linalg.norm(k[wr] - s) for s in spots) < 0.6 * sw:
+                if c[wr] > 0.5 and ear_pts and (sh_y is None or k[wr][1] < sh_y[1] - 0.2 * sw):
+                    if min(np.linalg.norm(k[wr] - e) for e in ear_pts) < 0.4 * sw:
                         hands += 1
-            resp_state["ears"] = (hands >= 1, f"hands at ears: {hands}")
+            if hands == 1:
+                self.one_hand_since = self.one_hand_since or now
+            else:
+                self.one_hand_since = None
+            ears = hands >= 2 or (hands == 1 and now - self.one_hand_since >= 2.5)
+            resp_state["ears"] = (ears, f"hands at ears: {hands}")
+            self.ear_debug = {"hands": hands, "wrist_conf": [round(float(c[L_WR]), 2), round(float(c[R_WR]), 2)],
+                              "wrists": [k[L_WR].round().tolist(), k[R_WR].round().tolist()],
+                              "ears": [e.round().tolist() for e in ear_pts], "shoulder_w": round(float(sw))}
             shm = mean_pt(k, c, (L_SH, R_SH))
             if shm is not None and c[NOSE] > KP_OK:
                 gap = (shm[1] - k[NOSE][1]) / sw
                 resp_state["head_down"] = (gap < 0.15, f"nose above shoulders: {gap:.2f}")
             rs = rocking_score(tr, now)
-            resp_state["rocking"] = (rs >= 4, f"back-and-forth swings: {rs}")
+            resp_state["rocking"] = (rs >= 6, f"back-and-forth swings: {rs}")
         for key, (active, val) in resp_state.items():
             r = self.resp[key]
             if r.update(active, now, val):
                 causes = sorted({lbl for t, lbl in self.recent if now - t <= 20})
                 self.last_link = f"{r.label} <- " + (", ".join(causes) if causes else "no trigger seen")
-                self.log_event("reaction", key, r.label, frame, {"linked_triggers": causes},
+                self.log_event("reaction", key, r.label, frame, {"linked_triggers": causes, "debug": getattr(self, "ear_debug", None) if key == "ears" else None},
                                detail=("after: " + ", ".join(causes)) if causes else "")
 
         # 9) overload moment: calming sound + tell the professor
