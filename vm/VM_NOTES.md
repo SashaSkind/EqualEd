@@ -6,7 +6,7 @@
 (team-17 cluster, `bash vm/deploy.sh` to update).
 
 What works, on the VM and in the deployed pod:
-- Live tab: YOLO11n + YOLOE detection on CPU (about 40 fps in the pod), "too close" and "rushing" moments,
+- Live tab: YOLO11n + YOLOE detection on CPU (about 12 fps steady in the pod, using about 13 cores), "too close" and "rushing" moments,
   sound level from the clip, Cosmos3-Reason risk every 2 s with the reason line, risk-over-time chart and
   "Seen it coming" lead time. Clip picker with 6 archive clips downloaded through VSS.
 - Search tab: VSS search, 7 presets, playback through the app's clip proxy, "analyze on Live", W&B
