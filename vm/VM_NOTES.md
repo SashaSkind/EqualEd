@@ -303,7 +303,7 @@ on street clips an "invasion" really means "someone very close to another person
 
 ## Done: Task 3, Search triggers page (2026-10-02)
 
-`/search` (`vm/archive.py`, `vm/search_page.py`):
+`/search` (`vm/archive.py`, now a tab in `vm/ui.py`):
 - VSS `POST /api/v1/search` (`top_k 12`, `llm_top_n 1`, `min_similarity 0.2`), 5 to 10 s per query.
   "crowd of people crossing the street" returns 12 SF crosswalk moments, best 0.54 (`sf4_chunk_0026`).
 - Clips play through the app's `/api/clip` proxy (VSS stream with the JWT kept server-side, Range requests
@@ -327,3 +327,19 @@ warehouse Camera_02, synthetic forklift, Toronto streetcar). Archive chunks are 
 into `/tmp/equaled_clips` (34 MB took a few seconds) and then analyzed like local files. Parent chunks are
 HEVC, and OpenCV and ffmpeg decode them fine. With no local video at all (the pod), the app downloads the
 first archive clip and starts with it.
+
+## UI redo and Task 5 wording (2026-10-02)
+
+The VM page (`vm/ui.py`) now uses the same look as the laptop app's student page in `server.py`: light or
+dark theme from the OS, sticky header with status chips (FPS, clip, audio, Cosmos, archive, W&B, Weave),
+card grid and meters. It has three tabs on one page: Live, Search the archive (VAST), and Sensory map (VAST).
+`/`, `/dashboard` and `/search` all serve it; `vm/search_page.py` is gone.
+
+Task 5 wording, used everywhere (cards, banners, video overlay, event text):
+"invaded" became "too close", "sudden" became "rushing" or "moving fast", "clear" became "has space
+again". The Live cards are "Sensory risk", "Seen it coming", "Busy around a person", "Sound in the clip",
+"Risk over time", "Things closing in", "Rushing" and "Recent moments".
+
+On 2026-10-02 at about 23:10, VSS search returned 500 for every query: the backend's Cosmos-Embed1 model
+said "Model cosmos-embed1 is not ready". The Search tab now shows "the archive's search model is offline
+right now" instead of a bare HTTP error. Login, clip streaming and the sensory map still worked.

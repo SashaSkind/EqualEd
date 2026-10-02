@@ -333,7 +333,7 @@ class RobotSpaceDetector:
                     "robot": f"R{rob.tid}",
                     "subtype": rob.subtype,
                     "kind": "invasion",
-                    "detail": f"personal space invaded by {closest_label}"
+                    "detail": f"{closest_label} got too close"
                               + (f" ({closest:.2f} body-lengths)" if closest is not None else ""),
                 })
             elif was and not rob.invaded:
@@ -343,7 +343,7 @@ class RobotSpaceDetector:
                     "robot": f"R{rob.tid}",
                     "subtype": rob.subtype,
                     "kind": "clear",
-                    "detail": "personal space clear again",
+                    "detail": "has space again",
                 })
 
     def _update_motion(self, now):
@@ -375,7 +375,7 @@ class RobotSpaceDetector:
                     "agent": who,
                     "subtype": tr.subtype,
                     "kind": "sudden",
-                    "detail": f"sudden movement ({tr.speed:.1f} body-lengths/s)",
+                    "detail": f"moving fast ({tr.speed:.1f} body-lengths/s)",
                 })
 
     # -------------------------------------------------------------- public
@@ -454,21 +454,21 @@ class RobotSpaceDetector:
             is_agv = tr.kind == "robot" and tr.subtype == "agv"
             if is_agv:
                 col = (0, 140, 255) if sudden else (0, 200, 230)
-                tag = f"R{tr.tid} agv" + (" · MOVE" if sudden else "")
+                tag = f"R{tr.tid} agv" + (" · RUSHING" if sudden else "")
                 thick = 3 if sudden else 2
             elif tr.kind == "robot":
                 invaded = bool(info.get("invaded"))
                 col = (0, 0, 230) if invaded else (0, 200, 80)
-                tag = f"R{tr.tid} {tr.subtype} · {'INVADED' if invaded else 'CLEAR'}"
+                tag = f"R{tr.tid} {tr.subtype} · {'TOO CLOSE' if invaded else 'has space'}"
                 if info.get("closest") is not None:
                     tag += f" ({info['closest']:.1f}bl)"
                 if sudden:
-                    tag += " · MOVE"
+                    tag += " · RUSHING"
                     col = (0, 140, 255) if not invaded else col
                 thick = 3 if invaded or sudden else 2
             else:
                 col = (0, 140, 255) if sudden else (220, 180, 60)
-                tag = f"P{tr.tid}" + (" · MOVE" if sudden else "")
+                tag = f"P{tr.tid}" + (" · RUSHING" if sudden else "")
                 thick = 3 if sudden else 2
             cv2.rectangle(vis, (x1, y1), (x2, y2), col, thick)
             cv2.putText(vis, tag, (x1, max(y1 - 8, 16)),
@@ -477,11 +477,10 @@ class RobotSpaceDetector:
                 cx, cy = map(int, _center(tr.box))
                 rad = int(PERSONAL_SPACE * _size(tr.box) / 2)
                 cv2.circle(vis, (cx, cy), max(rad, 8), col, 1)
-        banner = (f"robots {st['summary']['robots']} (agv {st['summary'].get('agvs', 0)})  "
-                  f"invaded {st['summary']['invaded']}  "
-                  f"clear {st['summary']['clear']}  "
-                  f"sudden {st['summary'].get('sudden', 0)}  "
+        banner = (f"too close {st['summary']['invaded']}  "
+                  f"rushing {st['summary'].get('sudden', 0)}  "
                   f"people {st['summary']['people']}  "
+                  f"robots {st['summary']['robots']} (agv {st['summary'].get('agvs', 0)})  "
                   f"t={st['video_t']:.1f}s")
         cv2.rectangle(vis, (0, 0), (vis.shape[1], 36), (20, 20, 20), -1)
         cv2.putText(vis, banner, (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65,

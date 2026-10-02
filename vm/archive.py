@@ -66,6 +66,18 @@ def _init_weave() -> bool:
 
 
 # ------------------------------------------------------------------ VSS
+def _check(r: requests.Response) -> None:
+    if r.ok:
+        return
+    try:
+        detail = str(r.json().get("detail", ""))
+    except ValueError:
+        detail = r.text
+    if "not ready" in detail or "unavailable" in detail:
+        raise RuntimeError(f"the archive's search model is offline right now (VSS {r.status_code}): {detail[:200]}")
+    raise RuntimeError(f"archive returned {r.status_code}: {detail[:200]}")
+
+
 class VSS:
     def __init__(self):
         self._token = None
@@ -86,9 +98,9 @@ class VSS:
             r = requests.post(INGRESS_URL + path, json=body, timeout=timeout,
                               headers={"Authorization": "Bearer " + self.token(force)})
             if r.status_code != 401:
-                r.raise_for_status()
+                _check(r)
                 return r.json()
-        r.raise_for_status()
+        _check(r)
         return {}
 
     def search(self, query: str, top_k: int = 12) -> dict:
