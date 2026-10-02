@@ -223,30 +223,60 @@ def posture(k, c):
     return "stand" if r > 0.6 else "sit" if r < 0.35 else None
 
 
-def rocking_score(tr, now, window=4.0):
-    xs, ys, ss = [], [], []
+def _flips(sig, min_p2p):
+    """How many times a signal swings back and forth (after removing slow drift)."""
+    sig = np.asarray(sig, float)
+    if len(sig) < 12:
+        return 0, 0.0
+    w = max(9, (len(sig) // 3) | 1)                               # ~1.5 s: removes slow leaning, keeps rocking
+    trend = np.convolve(np.pad(sig, w // 2, mode="edge"), np.ones(w) / w, mode="valid")
+    d = np.convolve(sig - trend, np.ones(3) / 3, mode="same")[2:-2]
+    if len(d) < 8:
+        return 0, 0.0
+    p2p = float(np.percentile(d, 90) - np.percentile(d, 10))
+    if p2p < min_p2p:
+        return 0, p2p
+    th, state, flips = 0.25 * p2p, 0, 0
+    for v in d:
+        s = 1 if v > th else -1 if v < -th else 0
+        if s and s != state:
+            if state:
+                flips += 1
+            state = s
+    return flips, p2p
+
+
+def rocking_score(tr, now, window=5.0):
+    """Back-and-forth swings of the head (side to side, up and down, toward/away from the
+    camera) and of the shoulders. Returns (best swing count, details)."""
+    head = {"x": [], "y": [], "size": []}
+    sh = {"x": [], "y": []}
     for t, k, c, b in tr.hist:
-        if now - t <= window and c[L_SH] > KP_OK and c[R_SH] > KP_OK:
-            m = (k[L_SH] + k[R_SH]) / 2
-            xs.append(m[0]); ys.append(m[1]); ss.append(max(np.linalg.norm(k[L_SH] - k[R_SH]), 10))
-    if len(xs) < 20:
-        return 0
-    sw = float(np.median(ss))
-    best = 0
-    for sig in (np.array(xs) / sw, np.array(ys) / sw, np.array(ss) / sw):
-        d = np.convolve(sig - sig.mean(), np.ones(3) / 3, mode="same")
-        p2p = np.percentile(d, 90) - np.percentile(d, 10)
-        if p2p < 0.22:          # swings must be at least ~a fifth of shoulder width
+        if now - t > window:
             continue
-        th, state, flips = 0.25 * p2p, 0, 0
-        for v in d:
-            s = 1 if v > th else -1 if v < -th else 0
-            if s and s != state:
-                if state:
-                    flips += 1
-                state = s
-        best = max(best, flips)
-    return best
+        if c[L_EYE] > 0.4 and c[R_EYE] > 0.4 and c[NOSE] > 0.4:
+            eye_d = max(float(np.linalg.norm(k[L_EYE] - k[R_EYE])), 4.0)
+            head["x"].append(k[NOSE][0]); head["y"].append(k[NOSE][1]); head["size"].append(eye_d)
+        if c[L_SH] > 0.5 and c[R_SH] > 0.5:
+            m = (k[L_SH] + k[R_SH]) / 2
+            sh["x"].append(m[0]); sh["y"].append(m[1])
+    best, info = 0, {}
+    if len(head["size"]) >= 12:
+        scale = float(np.median(head["size"]))
+        for name, sig, mp in (("head side-to-side", np.array(head["x"]) / scale, 0.2),
+                              ("head up-and-down", np.array(head["y"]) / scale, 0.2),
+                              ("toward/away", np.array(head["size"]) / scale, 0.05)):
+            f, p = _flips(sig, mp)
+            info[name] = (f, round(p, 2))
+            best = max(best, f)
+    if len(sh["x"]) >= 12:
+        sw = max(float(np.median([abs(v) for v in np.diff(sh["x"])] + [1.0])), 1.0)
+        span = max(float(np.ptp(sh["x"])), 1.0)
+        for name, sig in (("shoulders side-to-side", sh["x"]), ("shoulders up-and-down", sh["y"])):
+            f, p = _flips(np.array(sig) / max(span, 20.0), 0.3)
+            info[name] = (f, round(p, 2))
+            best = max(best, f)
+    return best, info
 
 
 # ---------------------------------------------------------------- alerts
@@ -834,8 +864,9 @@ class Demo:
             if shm is not None and c[NOSE] > KP_OK:
                 gap = (shm[1] - k[NOSE][1]) / sw
                 resp_state["head_down"] = (gap < 0.15, f"nose above shoulders: {gap:.2f}")
-            rs = rocking_score(tr, now)
-            resp_state["rocking"] = (rs >= 6, f"back-and-forth swings: {rs}")
+            rs, rinfo = rocking_score(tr, now)
+            self.rock_debug = rinfo
+            resp_state["rocking"] = (rs >= 4, f"back-and-forth swings: {rs}")
         for key, (active, val) in resp_state.items():
             r = self.resp[key]
             if r.update(active, now, val):
@@ -1023,6 +1054,7 @@ class Demo:
             "recording": self.recording, "professor_url": self.server.prof_url,
             "objects": [[n, round(c, 2), bool(h)] for n, c, b, h in self.objects],
             "ear_debug": getattr(self, "ear_debug", None),
+            "rock_debug": getattr(self, "rock_debug", None),
             "reaction_values": {k: r.value for k, r in self.resp.items()},
             "hectic": {"value": round(self.hectic), "parts": self.hectic_parts, "locked": self.mode == "locked",
                        "name": self.cfg.get("student_name", "Demo student"),
