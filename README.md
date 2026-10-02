@@ -6,7 +6,7 @@
 
 > **Teammates: start with [TEAM_UPDATE.md](TEAM_UPDATE.md)** for everything built so far, what's tested, and what's left.
 
-> **Live demo (VAST cluster): [video-lab-team-17.cosmos.vastdata.com/app](http://video-lab-team-17.cosmos.vastdata.com/app)**, the sensory-overload dashboard with Cosmos risk, archive search and a sensory map ([details](vm/README.md)).
+> **Live demo (VAST cluster): [video-lab-team-17.cosmos.vastdata.com/app](http://video-lab-team-17.cosmos.vastdata.com/app)**, the sensory-overload dashboard with Cosmos risk, archive search and a sensory map ([details](vm/README.md)). The host is only reachable inside the VAST lab network: open it from the team VM's browser.
 
 EqualEd watches a classroom in real time and steps in when a student is struggling.
 Everything runs on the student's laptop. Video and audio never leave the device.

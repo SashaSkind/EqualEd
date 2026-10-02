@@ -2,6 +2,8 @@
 
 **Live demo: [http://video-lab-team-17.cosmos.vastdata.com/app](http://video-lab-team-17.cosmos.vastdata.com/app)**
 (runs on the team-17 cluster; the first load after a restart takes about 2 minutes).
+The host has no public DNS: it resolves only inside the VAST lab network (the VM maps it to `10.146.15.121`
+in `/etc/hosts`), so open it from the team VM's browser.
 
 The app plays a clip, flags people and things that get **too close** to a person or are **rushing**,
 watches for **loud** sound, and asks NVIDIA Cosmos3-Reason for a 0 to 10 sensory-risk score every 2 s
