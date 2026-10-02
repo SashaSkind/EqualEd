@@ -281,8 +281,8 @@ async function scan(){$('scanB').disabled=true;$('scanStat').textContent='Search
 function renderArchive(r){if(!r||!r.places)return;const mx=Math.max(0.01,...r.places.map(p=>Math.abs(p.score)));
  $('places').innerHTML=r.places.length?r.places.map((p,i)=>`<div class=row><span class=grow><b>${i+1}. ${esc(p.place)}</b><br><span class="small muted">${esc(p.top||'calm')}</span>
   <div class=meter><div style="width:${Math.max(3,100*Math.max(0,p.score)/mx)}%;background:${p.score>mx*.6?'var(--red)':p.score>mx*.3?'var(--orange)':'var(--green)'}"></div></div></span>
-  <span class="right small">${p.score>0?'load '+p.score:'calm'}</span></div>`).join(''):'No matches. Try re-ingesting with the sensory prompt below.';
- $('clips').innerHTML=r.clips.length?r.clips.map(c=>`<div class=ev><div class=t>${esc(c.trigger)} · ${esc(c.place)} · match ${c.similarity}</div><div>${esc(c.caption)}</div></div>`).join(''):'None.';}
+  <span class="right small">${'load '+p.score+'/10'}</span></div>`).join(''):'No matches. Try re-ingesting with the sensory prompt below.';
+ $('clips').innerHTML=r.clips.length?r.clips.map(c=>`<div class=ev><div class=t>${esc(c.trigger)} · ${esc(c.place)} · load ${c.similarity}/10</div><div>${esc(c.caption)}</div></div>`).join(''):'None.';}
 async function findFootage(){$('ffB').disabled=true;$('ffStat').textContent='Searching and downloading (1 to 2 minutes)...';
  const r=await post('footage_find',{});$('ffB').disabled=false;$('ffStat').textContent=r.error||('Found '+(r.clips||[]).length+' clips');}
 function renderFootage(list){$('footage').innerHTML=(list&&list.length)?list.map(c=>`<div class=ev><div class=t>${esc(c.location||'?')} · ${esc(c.camera_id||'?')} · match ${c.similarity} · "${esc(c.query)}"</div>
@@ -311,7 +311,7 @@ function render(){if(!S)return;$('who').textContent=S.student;
   :C?`<div class=big style="font-size:22px">${esc(C.what||'nothing risky')}</div><div class=meter><div style="width:${Math.round(C.risk*100)}%;background:${color(C.risk*100)}"></div></div>
    <div>${esc(C.why)}</div><div class="small muted">risk ${Math.round(C.risk*100)}% · answered in ${C.latency}s · ${S.vast.cosmos_calls} reads · ${S.vast.cosmos_video?'video':'still frames'}</div>`
   :(S.vast.cosmos_error?'Error: '+esc(S.vast.cosmos_error):'Watching... first read in a few seconds.');
- $('ip').value=S.vast.ingest_prompt;$('src').textContent=S.source;
+ $('ip').value=S.vast.ingest_prompt;if(S.archive&&S.archive.time&&!$('scanStat').textContent)$('scanStat').textContent='Labeled '+S.archive.time;$('src').textContent=S.source;
  const fk=JSON.stringify((S.footage||[]).map(c=>c.file));if(fk!==window._fk){window._fk=fk;renderFootage(S.footage);}if(S.archive&&!$('places').innerHTML)renderArchive(S.archive);
  const O=S.overload;$('over').innerHTML=O.active?`<b style="color:var(--red)">${esc(O.reason)}</b><br>${esc(O.sound)}${S.overload_cosmos?'<br><b>Cosmos:</b> '+esc(S.overload_cosmos):''}<br>Professor: ${O.acked?'<b style="color:var(--green)">on the way</b>':'notified, waiting'}`:(O.count?`${O.count} overload moment(s) so far. Last: ${esc(O.reason)}`:'No overload moments yet');
  $('bOver').className='banner bad'+(O.active?' show':'');$('bOver').textContent='Overload support active: '+O.reason+(O.acked?' · professor on the way':' · professor notified');

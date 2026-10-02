@@ -337,7 +337,7 @@ class Demo:
         # hackathon stack: Cosmos3-Reason + Canary-1B on CoreWeave, VSS archive, W&B inference
         self.vast = Vast()
         self.cosmos = CosmosWatcher(self.vast, start=use_audio)   # self-test makes no network calls
-        self.archive, self.archive_error = None, ""
+        self.archive, self.archive_error = self.load_archive_labels(), ""
         self.transcriber = Transcriber(self.audio, vast=self.vast)
         # risk + predictions
         self.risk, self.risk_reason, self.risk_parts = 0.0, "", []
@@ -387,6 +387,20 @@ class Demo:
         except Exception as e:
             self.archive_error = f"{type(e).__name__}: {str(e)[:160]}"
             return {"error": self.archive_error}
+
+    def load_archive_labels(self):
+        """Saved sensory labels of the team's VAST archive (Cosmos captions + YOLO counts)."""
+        try:
+            a = json.load(open(os.path.join(HERE, "archive_sensory_labels.json")))
+        except Exception:
+            return None
+        places = [{"place": f"{p['location']} · {p['camera_id']}", "score": p["avg_load"],
+                   "top": f"{p['main_triggers']} · {p['high_pct']}% high load, {p['calm_pct']}% calm"} for p in a["places"]]
+        clips = [{"trigger": c["triggers"], "place": f"{c['location']} · {c['camera_id']} @ {c['start_sec']}s",
+                  "similarity": c["load"], "caption": c["caption"]} for c in a["top_clips"]]
+        return {"places": places, "clips": clips,
+                "time": f"{a['labeled_at']} ({a['clips_labeled']} clips: {a['levels']['high']} high, "
+                        f"{a['levels']['moderate']} moderate, {a['levels']['calm']} calm)"}
 
     def footage_list(self):
         p = os.path.join(HERE, "archive_clips", "index.json")

@@ -1,0 +1,497 @@
+{
+ "source": "VAST archive team-17 (Cosmos3-Reason captions + YOLO11 counts), labeled by label_archive.py rules",
+ "labeled_at": "2026-10-02 14:23",
+ "clips_labeled": 2352,
+ "videos": 414,
+ "levels": {
+  "high": 771,
+  "moderate": 1015,
+  "calm": 566
+ },
+ "segment_uri_prefix": "s3://team-17-vss-chunks-segments/segments/",
+ "places": [
+  {
+   "location": "san_francisco",
+   "camera_id": "sf_streets_cam-2",
+   "clips": 180,
+   "avg_load": 5.5,
+   "high_pct": 76,
+   "calm_pct": 1,
+   "main_triggers": "crowding 100%, noise 83%, motion 3%"
+  },
+  {
+   "location": "san_francisco",
+   "camera_id": "sf_streets_cam-1",
+   "clips": 148,
+   "avg_load": 5.3,
+   "high_pct": 65,
+   "calm_pct": 2,
+   "main_triggers": "crowding 99%, noise 89%, motion 1%"
+  },
+  {
+   "location": "san_francisco",
+   "camera_id": "sf_streets_cam-4",
+   "clips": 180,
+   "avg_load": 5.0,
+   "high_pct": 52,
+   "calm_pct": 1,
+   "main_triggers": "crowding 96%, noise 94%, motion 2%"
+  },
+  {
+   "location": "nashville",
+   "camera_id": "i24_cam-1",
+   "clips": 180,
+   "avg_load": 4.4,
+   "high_pct": 29,
+   "calm_pct": 4,
+   "main_triggers": "noise 97%, motion 65%"
+  },
+  {
+   "location": "san_francisco",
+   "camera_id": "sf_streets_cam-3",
+   "clips": 37,
+   "avg_load": 4.2,
+   "high_pct": 30,
+   "calm_pct": 8,
+   "main_triggers": "crowding 100%, noise 51%, motion 5%"
+  },
+  {
+   "location": "indoor",
+   "camera_id": "smartspace_cam-1",
+   "clips": 180,
+   "avg_load": 4.1,
+   "high_pct": 46,
+   "calm_pct": 30,
+   "main_triggers": "crowding 67%, noise 59%, motion 1%"
+  },
+  {
+   "location": "toronto",
+   "camera_id": "pie_cam-3",
+   "clips": 1080,
+   "avg_load": 4.1,
+   "high_pct": 28,
+   "calm_pct": 14,
+   "main_triggers": "noise 91%, crowding 50%, motion 15%"
+  },
+  {
+   "location": "warehouse3",
+   "camera_id": "sdg_warehouse_cam-2",
+   "clips": 60,
+   "avg_load": 1.9,
+   "high_pct": 0,
+   "calm_pct": 83,
+   "main_triggers": "noise 68%, motion 2%"
+  },
+  {
+   "location": "neighborhood",
+   "camera_id": "neighborhood_cam-1",
+   "clips": 307,
+   "avg_load": 0.6,
+   "high_pct": 0,
+   "calm_pct": 97,
+   "main_triggers": "noise 6%, motion 4%, light 0%"
+  }
+ ],
+ "top_clips": [
+  {
+   "segment": "20261001_094307_sf1_chunk_0005_segment_003_of_006.mp4",
+   "camera_id": "sf_streets_cam-1",
+   "location": "san_francisco",
+   "start_sec": 10,
+   "load": 7.4,
+   "level": "high",
+   "triggers": "noise+crowding+motion",
+   "caption": "A man wearing a blue shirt and carrying a backpack walks across the street, passing by a blue mailbox and a sc"
+  },
+  {
+   "segment": "20261001_061241_set01_video_chunk_0017_segment_002_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 5,
+   "load": 7.4,
+   "level": "high",
+   "triggers": "noise+crowding+motion",
+   "caption": "The scene unfolds on a two-lane, two-way road with a center turn lane, under a partly cloudy sky with bright s"
+  },
+  {
+   "segment": "20261001_100443_sf3_chunk_0001_segment_004_of_006.mp4",
+   "camera_id": "sf_streets_cam-3",
+   "location": "san_francisco",
+   "start_sec": 15,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "A person wearing a black jacket and carrying a backpack is riding a bicycle in the foreground, moving from rig"
+  },
+  {
+   "segment": "20261001_094746_sf1_chunk_0016_segment_001_of_006.mp4",
+   "camera_id": "sf_streets_cam-1",
+   "location": "san_francisco",
+   "start_sec": 0,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene shows a busy city intersection with pedestrians and vehicles moving through. Two people walk along t"
+  },
+  {
+   "segment": "20261001_094630_sf1_chunk_0013_segment_003_of_006.mp4",
+   "camera_id": "sf_streets_cam-1",
+   "location": "san_francisco",
+   "start_sec": 10,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy city intersection with pedestrians crossing the street and vehicles moving through the cro"
+  },
+  {
+   "segment": "20261001_064735_set04_video_chunk_0006_segment_002_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 5,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene unfolds on a multi-lane city street under a partly cloudy sky, with a modern glass high-rise on the "
+  },
+  {
+   "segment": "20261001_065150_set04_video_chunk_0016_segment_004_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 15,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy urban intersection on a partly cloudy day, viewed from a vehicle approaching the junction."
+  },
+  {
+   "segment": "20261001_064154_set03_video_chunk_0024_segment_003_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 10,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is captured from a vehicle's dashboard camera, showing a city intersection on a partly cloudy day. T"
+  },
+  {
+   "segment": "20261001_062149_set02_video_chunk_0008_segment_005_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 20,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a wide, multi-lane urban road with two lanes in each direction and a dedicated bike lane on the r"
+  },
+  {
+   "segment": "20261001_062306_set02_video_chunk_0011_segment_006_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 25,
+   "load": 7.3,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is captured from a vehicle traveling on a multi-lane urban road. The road surface is dry and marked "
+  },
+  {
+   "segment": "20261001_094630_sf1_chunk_0013_segment_001_of_006.mp4",
+   "camera_id": "sf_streets_cam-1",
+   "location": "san_francisco",
+   "start_sec": 0,
+   "load": 7.2,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy city intersection with pedestrians and vehicles moving through the area. A silver pickup t"
+  },
+  {
+   "segment": "20261001_065332_set04_video_chunk_0020_segment_004_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 15,
+   "load": 7.2,
+   "level": "high",
+   "triggers": "noise+crowding",
+   "caption": "The scene is captured from a vehicle moving along a narrow, busy street lined with parked cars and storefronts"
+  },
+  {
+   "segment": "20261001_095018_sf1_chunk_0022_segment_002_of_006.mp4",
+   "camera_id": "sf_streets_cam-1",
+   "location": "san_francisco",
+   "start_sec": 5,
+   "load": 7.1,
+   "level": "high",
+   "triggers": "noise+crowding",
+   "caption": "The scene unfolds on a city street corner with a large stone structure in the foreground. A blue mailbox stand"
+  },
+  {
+   "segment": "20261001_065124_set04_video_chunk_0015_segment_004_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 15,
+   "load": 7.1,
+   "level": "high",
+   "triggers": "unavailable",
+   "caption": "The scene is a busy urban intersection with a marked pedestrian crosswalk in the foreground. The road surface "
+  },
+  {
+   "segment": "20261001_062149_set02_video_chunk_0008_segment_001_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 0,
+   "load": 7.1,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is captured from a vehicle stopped at an intersection on a partly cloudy day. The road surface is dr"
+  },
+  {
+   "segment": "20261001_061746_set01_video_chunk_0029_segment_005_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 20,
+   "load": 7.1,
+   "level": "high",
+   "triggers": "noise+crowding",
+   "caption": "The scene is captured from a vehicle's dashboard camera, showing a street intersection under a partly cloudy s"
+  },
+  {
+   "segment": "20261001_061513_set01_video_chunk_0023_segment_004_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 15,
+   "load": 7.1,
+   "level": "high",
+   "triggers": "unavailable",
+   "caption": "The scene is a busy urban intersection on a partly cloudy day, viewed from a vehicle stopped at a red light. O"
+  },
+  {
+   "segment": "20261001_101141_sf4_chunk_0011_segment_001_of_006.mp4",
+   "camera_id": "sf_streets_cam-4",
+   "location": "san_francisco",
+   "start_sec": 0,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene shows a busy city intersection with a marked pedestrian crosswalk. Several people are crossing the s"
+  },
+  {
+   "segment": "20261001_100819_sf4_chunk_0003_segment_006_of_006.mp4",
+   "camera_id": "sf_streets_cam-4",
+   "location": "san_francisco",
+   "start_sec": 25,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "noise+crowding",
+   "caption": "A black bus drives through the intersection, moving from one side to the other."
+  },
+  {
+   "segment": "20261001_100443_sf3_chunk_0001_segment_005_of_006.mp4",
+   "camera_id": "sf_streets_cam-3",
+   "location": "san_francisco",
+   "start_sec": 20,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene shows a busy urban intersection with multiple vehicles and pedestrians. A gray SUV is seen driving t"
+  },
+  {
+   "segment": "20261001_095151_sf2_chunk_0001_segment_004_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 15,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy city intersection with pedestrians and vehicles moving through the area. A white truck is "
+  },
+  {
+   "segment": "20261001_095151_sf2_chunk_0001_segment_005_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 20,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy urban intersection with pedestrians crossing and vehicles moving through. A white truck is"
+  },
+  {
+   "segment": "20261001_095836_sf2_chunk_0017_segment_002_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 5,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy city intersection with pedestrians and vehicles moving through the area. A FedEx delivery "
+  },
+  {
+   "segment": "20261001_095655_sf2_chunk_0013_segment_003_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 10,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy city intersection with pedestrians and vehicles moving through. A white SUV is parked on t"
+  },
+  {
+   "segment": "20261001_095217_sf2_chunk_0002_segment_001_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 0,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "A white box truck is making a right turn at an intersection in a busy urban area. The truck is large and white"
+  },
+  {
+   "segment": "20261001_095217_sf2_chunk_0002_segment_002_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 5,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy urban intersection with pedestrians crossing and vehicles moving through. A white delivery"
+  },
+  {
+   "segment": "20261001_095126_sf2_chunk_0000_segment_005_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 20,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy city intersection with multiple pedestrians crossing the street. A woman in a black top an"
+  },
+  {
+   "segment": "20261001_100133_sf2_chunk_0024_segment_005_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 20,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "A white van is parked on the left side of the intersection, facing the camera. A white truck is visible on the"
+  },
+  {
+   "segment": "20261001_094630_sf1_chunk_0013_segment_006_of_006.mp4",
+   "camera_id": "sf_streets_cam-1",
+   "location": "san_francisco",
+   "start_sec": 25,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene shows a busy city intersection with pedestrians and vehicles. A UPS delivery truck is parked on the "
+  },
+  {
+   "segment": "20261001_094307_sf1_chunk_0005_segment_004_of_006.mp4",
+   "camera_id": "sf_streets_cam-1",
+   "location": "san_francisco",
+   "start_sec": 15,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy city intersection with pedestrians, vehicles, and urban infrastructure visible. A black SU"
+  },
+  {
+   "segment": "20261001_080044_2025_test_Warehouse_017_Camera_chunk_0007_segment_001_of_006.mp4",
+   "camera_id": "smartspace_cam-1",
+   "location": "indoor",
+   "start_sec": 0,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene takes place in a large, open indoor space with a smooth, dark gray floor marked by faint grid lines."
+  },
+  {
+   "segment": "20261001_065358_set04_video_chunk_0021_segment_004_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 15,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is captured from a vehicle moving along a narrow, busy street lined with parked cars on both sides. "
+  },
+  {
+   "segment": "20261001_065150_set04_video_chunk_0016_segment_001_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 0,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a busy urban intersection with a marked pedestrian crosswalk in the foreground. The sky is partly"
+  },
+  {
+   "segment": "20261001_064618_set04_video_chunk_0003_segment_002_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 5,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene unfolds at an intersection on a multi-lane road under a partly cloudy sky. The road surface is dry a"
+  },
+  {
+   "segment": "20261001_065124_set04_video_chunk_0015_segment_003_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 10,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is a wide intersection with multiple lanes and tram tracks running through the center. The sky is pa"
+  },
+  {
+   "segment": "20261001_062900_set02_video_chunk_0025_segment_003_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 10,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene is captured from a vehicle traveling along a two-lane road with a yellow center line, moving through"
+  },
+  {
+   "segment": "20261001_061720_set01_video_chunk_0028_segment_003_of_006.mp4",
+   "camera_id": "pie_cam-3",
+   "location": "toronto",
+   "start_sec": 10,
+   "load": 7.0,
+   "level": "high",
+   "triggers": "noise+crowding",
+   "caption": "The scene is captured from a vehicle's dashboard camera, showing a street intersection under a partly cloudy s"
+  },
+  {
+   "segment": "20261001_101644_sf4_chunk_0023_segment_002_of_006.mp4",
+   "camera_id": "sf_streets_cam-4",
+   "location": "san_francisco",
+   "start_sec": 5,
+   "load": 6.9,
+   "level": "high",
+   "triggers": "crowding+noise",
+   "caption": "The scene shows a busy urban intersection with pedestrians crossing a marked crosswalk. Several people are wal"
+  },
+  {
+   "segment": "20261001_100443_sf3_chunk_0001_segment_003_of_006.mp4",
+   "camera_id": "sf_streets_cam-3",
+   "location": "san_francisco",
+   "start_sec": 10,
+   "load": 6.9,
+   "level": "high",
+   "triggers": "noise+crowding",
+   "caption": "A person wearing a black shirt and brown shorts walks along the right side of the road, moving away from the c"
+  },
+  {
+   "segment": "20261001_095655_sf2_chunk_0013_segment_004_of_006.mp4",
+   "camera_id": "sf_streets_cam-2",
+   "location": "san_francisco",
+   "start_sec": 15,
+   "load": 6.9,
+   "level": "high",
+   "triggers": "unavailable",
+   "caption": "A person wearing a white shirt and black pants is riding a bicycle across the crosswalk."
+  }
+ ]
+}

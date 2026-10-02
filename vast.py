@@ -201,7 +201,7 @@ class Vast:
 
     def search(self, query, top_k=15, min_similarity=0.3, metadata_filters=None):
         return self._api("POST", "/api/v1/search", json={
-            "query": query, "top_k": top_k, "llm_top_n": 0, "min_similarity": min_similarity,
+            "query": query, "top_k": top_k, "llm_top_n": 1, "min_similarity": min_similarity,
             "metadata_filters": metadata_filters or {}, "include_public": True})
 
     def archive_ask(self, question):
